@@ -1,0 +1,24 @@
+module.exports = {
+    apps: [
+      {
+        name: "qa-backend",
+        script: "server.js",
+        cwd: "/home/ubuntu/qa-real-time-events/backend",
+        instances: 1,            // Or 'max' for all CPU cores
+        exec_mode: "fork",       // Or 'cluster'
+        env: {
+          NODE_ENV: "development",
+          PORT: 3000
+        },
+        env_production: {
+          NODE_ENV: "production",
+          PORT: 3000
+        },
+        error_file: "./logs/err.log",
+        out_file: "./logs/out.log",
+        log_date_format: "YYYY-MM-DD HH:mm:ss",
+        time: true
+      }
+    ]
+  };
+  
