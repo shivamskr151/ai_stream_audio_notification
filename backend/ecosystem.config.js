@@ -8,11 +8,11 @@ module.exports = {
         exec_mode: "fork",       // Or 'cluster'
         env: {
           NODE_ENV: "development",
-          PORT: 3005
+          PORT: 3007
         },
         env_production: {
           NODE_ENV: "production",
-          PORT: 3005
+          PORT: 3007
         },
         error_file: "./logs/err.log",
         out_file: "./logs/out.log",
