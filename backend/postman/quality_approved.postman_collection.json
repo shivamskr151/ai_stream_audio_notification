@@ -1,0 +1,185 @@
+{
+	"info": {
+		"_postman_id": "fe367d9b-976b-4585-89fd-e73b77304621",
+		"name": "AI Notification System API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "13748202"
+	},
+	"item": [
+		{
+			"name": "Health",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/health",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"health"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Events - List",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/events?status=LABELLED&page=1&pageSize=5",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"events"
+					],
+					"query": [
+						{
+							"key": "status",
+							"value": "LABELLED"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "pageSize",
+							"value": "5"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Events - Create",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"sensor_id\": \"cam-3\",\n  \"org_img\": \"https://example.com/image3.jpg\",\n  \"video_url\": \"https://example.com/clip3.mp4\",\n  \"datetimestamp_trackerid\": \"2025-10-01T20:30:00Z#trk-1\",\n  \"imgsz\": \"1280x720\",\n  \"severity\": \"low\",\n  \"count\": 1,\n  \"org_img_local\": \"/tmp/image3.jpg\",\n  \"absolute_bbox\": [\n    {\n      \"xywh\": [100, 150, 60, 80],\n      \"class_name\": \"person\",\n      \"confidence\": 0.92,\n      \"subcategory\": \"adult\",\n      \"color\": \"blue\",\n      \"parameters\": {\n        \"zone_name\": \"A1\",\n        \"note\": \"entry\"\n      },\n      \"anpr\": \"\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/events",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"events"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Events - Get by ID",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/events/bcc9b940-1e59-46a7-b14a-805f7e63861f",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"events",
+						"bcc9b940-1e59-46a7-b14a-805f7e63861f"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Events - Update",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"status\": \"APPROVED\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/api/events/bcc9b940-1e59-46a7-b14a-805f7e63861f",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"events",
+						"bcc9b940-1e59-46a7-b14a-805f7e63861f"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Events - Delete",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/api/events/:id",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"api",
+						"events",
+						":id"
+					],
+					"variable": [
+						{
+							"key": "id"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:4000"
+		}
+	]
+}

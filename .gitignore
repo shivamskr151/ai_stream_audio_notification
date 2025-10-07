@@ -1,0 +1,69 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Logs
+logs/
+**/logs/
+*.log
+*.log.*
+log/**/*.log
+
+# Env files
+.env
+**/.env
+*.env.local
+.env.*.local
+
+# Build outputs
+build/
+dist/
+.cache/
+.tmp/
+**/build/
+**/dist/
+**/.cache/
+**/.tmp/
+
+# Coverage
+coverage/
+.nyc_output/
+**/coverage/
+**/.nyc_output/
+
+# SQLite / local databases
+*.db
+*.db-shm
+*.db-wal
+**/*.db
+**/*.db-shm
+**/*.db-wal
+
+# Prisma generated client (if generated outside node_modules)
+prisma/client/
+
+# Editors/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Mac files
+.AppleDouble
+.LSOverride
+
+# TypeScript build cache
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Misc
+*.pid
+*.seed

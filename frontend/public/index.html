@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Quality Assurance</title>
+    <link rel="stylesheet" href="styles.css?v=2.1">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Quality Assurance</h1>
+            <div class="header-right">
+                <select id="page-size" class="page-size-select" aria-label="Items per page">
+                    <option value="2">Show 2</option>
+                    <option value="4">Show 4</option>
+                    <option value="6">Show 6</option>
+                    <option value="8">Show 8</option>
+                    <option value="12">Show 12</option>
+                    <option value="16">Show 16</option>
+                </select>
+                <div class="connection-status">
+                    <span id="status-indicator" class="status-disconnected">●</span>
+                    <span id="status-text">Disconnected</span>
+                    <div id="stop-status" class="stop-status hidden">
+                        <span id="stop-timer-text">Audio stopped for: </span>
+                        <span id="stop-countdown">--:--</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-container">
+            <div class="events-container">
+                <div class="events-toolbar">
+                    <div class="toolbar-left"></div>
+                    <div class="toolbar-right"></div>
+                </div>
+                
+                <div id="events-grid" class="events-grid">
+                    <div class="no-events-item">
+                        <div class="no-events">No events received yet</div>
+                    </div>
+                </div>
+                
+                <div class="pagination" aria-label="Events pagination">
+                    <div class="pagination-controls">
+                        <button id="page-prev" class="btn btn-pagination btn-nav" aria-label="Previous page">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M15 18L9 12L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                        <div id="page-numbers" class="page-numbers">
+                            <!-- Page numbers will be dynamically generated -->
+                        </div>
+                        <button id="page-next" class="btn btn-pagination btn-nav" aria-label="Next page">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Image preview modal -->
+            <div id="image-modal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+                <div class="modal-backdrop"></div>
+                <div class="modal-content" role="document">
+                    <button id="modal-close" class="btn btn-secondary modal-close" aria-label="Close preview">✕</button>
+                    <img id="modal-image" alt="Preview" />
+                </div>
+            </div>
+
+            <!-- Stop duration modal -->
+            <div id="stop-duration-modal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+                <div class="modal-backdrop"></div>
+                <div class="modal-content stop-duration-content" role="document">
+                    <h3>Stop Audio Duration</h3>
+                    <p>How long should the audio remain stopped?</p>
+                    <div class="duration-inputs">
+                        <div class="input-group">
+                            <label for="stop-minutes">Minutes:</label>
+                            <input id="stop-minutes" type="number" min="0" max="59" value="5" />
+                        </div>
+                        <div class="input-group">
+                            <label for="stop-seconds">Seconds:</label>
+                            <input id="stop-seconds" type="number" min="0" max="59" value="0" />
+                        </div>
+                    </div>
+                    <div class="modal-buttons">
+                        <button id="stop-duration-cancel" class="btn btn-secondary">Cancel</button>
+                        <button id="stop-duration-confirm" class="btn btn-primary">Stop</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    
+
+    <script src="/env.js?v=2.1"></script>
+    <script src="app.js?v=2.1"></script>
+</body>
+</html>

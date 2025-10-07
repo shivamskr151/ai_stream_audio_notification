@@ -1,0 +1,41 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Event {
+  id                      String    @id @default(uuid())
+  sensor_id               String
+  org_img                 String
+  video_url               String
+  datetimestamp_trackerid String
+  imgsz                   String
+  severity                String
+  count                   Int
+  status                  String    @default("LABELLED")
+  org_img_local           String    @unique()
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
+  
+  // one-to-many relation to absolute bounding boxes
+  absoluteBboxes          AbsoluteBbox[]
+}
+
+model AbsoluteBbox {
+  id          String  @id @default(uuid())
+  event       Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId     String
+  xywh        String
+  class_name  String
+  confidence  Float
+  subcategory String
+  color       String
+  parameters  String
+  anpr        String
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+}
