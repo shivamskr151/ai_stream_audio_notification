@@ -355,7 +355,16 @@ class SSEAudioNotifier {
 
             this.eventSource.onerror = (error) => {
                 console.error('SSE connection error:', error);
-                this.updateConnectionStatus('Connection Error', 'status-disconnected');
+                console.log('EventSource readyState:', this.eventSource?.readyState);
+                console.log('EventSource URL:', this.eventSource?.url);
+                
+                // Check if this is a connection failure vs temporary error
+                if (this.eventSource && this.eventSource.readyState === EventSource.CLOSED) {
+                    this.updateConnectionStatus('Connection Closed - Reconnecting...', 'status-disconnected');
+                } else {
+                    this.updateConnectionStatus('Connection Error', 'status-disconnected');
+                }
+                
                 // Prevent rapid reconnection attempts
                 const now = Date.now();
                 if (now - this.lastReconnectAttempt < 5000) { // Wait at least 5 seconds between attempts
