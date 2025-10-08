@@ -20,25 +20,32 @@ class AppService {
     }
   }
 
-  async checkKafkaConnection(timeoutMs = 5000) {
+  async checkKafkaConnection(timeoutMs = 10000) {
     if (!this.kafkaEnabled) return false;
-    const tempConsumer = new KafkaConsumerService();
+    
     const withTimeout = (p, ms) => new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('Kafka connection timeout')), ms);
       p.then(v => { clearTimeout(t); resolve(v); }).catch(err => { clearTimeout(t); reject(err); });
     });
+    
     try {
-      await withTimeout(tempConsumer.connect({
+      // Use the main consumer for connection check to avoid creating temporary instances
+      await withTimeout(this.consumer.connect({
         groupId: this.groupId,
-        sessionTimeout: 10000,
-        retry: { retries: 1, initialRetryTime: 300 }
+        sessionTimeout: 30000, // Increased session timeout
+        retry: { 
+          retries: 3, 
+          initialRetryTime: 300,
+          multiplier: 2 
+        }
       }), timeoutMs);
-      await tempConsumer.disconnect();
+      // eslint-disable-next-line no-console
+      console.log('[AppService] Kafka connection established successfully');
       return true;
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[AppService] Kafka connectivity check failed:', err && err.message ? err.message : err);
-      try { await tempConsumer.disconnect(); } catch (_) {}
+      try { await this.consumer.disconnect(); } catch (_) {}
       return false;
     }
   }
@@ -68,11 +75,14 @@ class AppService {
         groupId: this.groupId,
         sessionTimeout: 30000,
         heartbeatInterval: 3000,
-        rebalanceTimeout: 60000
+        rebalanceTimeout: 60000,
+        partitionsConsumedConcurrently: 3, // Process multiple partitions concurrently
+        autoCommit: true,
+        autoCommitInterval: 5000,
+        autoCommitThreshold: 100
       },
-      onMessage: async (message, topic) => {
+      onMessage: async (message, topic, partition, heartbeat) => {
         try {
-          // eslint-disable-next-line no-console
           const valueStr = message.value ? message.value.toString('utf8') : '';
           let payload = null;
           try {
@@ -84,38 +94,30 @@ class AppService {
           // Prepare event data for database storage
           const eventData = payload && typeof payload === 'object' ? payload : { data: payload };
           
-          console.log('[AppService] Payload ========>', payload);
+          // eslint-disable-next-line no-console
+          console.log('[AppService] Processing message from partition', partition, ':', payload);
 
-          // Save to database
-          let savedEvent = null;
+          // Save to database and broadcast - the create method already returns the complete event
           try {
-            savedEvent = await this.eventService.create(eventData);
+            const savedEvent = await this.eventService.create(eventData);
+            // eslint-disable-next-line no-console
             console.log('[AppService] Event saved to database with ID:', savedEvent.id);
+            
+            // Broadcast the saved event (already contains all database fields)
+            broadcastEvent(savedEvent);
+            
+            // Send heartbeat to keep consumer alive during long processing
+            if (heartbeat) await heartbeat();
           } catch (dbError) {
+            // eslint-disable-next-line no-console
             console.error('[AppService] Failed to save event to database:', dbError);
-            // Continue with original event data if database save fails
-            savedEvent = eventData;
+            // Broadcast original event data if database save fails
+            broadcastEvent(eventData);
           }
-
-          // Fetch the complete event by ID to ensure we have all database fields
-          let completeEvent = savedEvent;
-          if (savedEvent && savedEvent.id) {
-            try {
-              const fetchedEvent = await this.eventService.getById(savedEvent.id);
-              if (fetchedEvent) {
-                completeEvent = fetchedEvent;
-              }
-            } catch (fetchError) {
-              console.error('[AppService] Failed to fetch event by ID:', fetchError);
-              // Use saved event if fetch fails
-            }
-          }
-
-          // Broadcast the complete event data via SSE
-          broadcastEvent(completeEvent);
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error('[AppService] Failed to process message:', err);
+          // Don't throw - let consumer continue processing
         }
       }
     });
