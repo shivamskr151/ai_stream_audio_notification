@@ -10,8 +10,8 @@ generator client {
 model Event {
   id                      String    @id @default(uuid())
   sensor_id               String
-  org_img                 String
-  video_url               String
+  org_img                 String    @unique() 
+  video_url               String    @unique()
   datetimestamp_trackerid String
   imgsz                   String
   severity                String
