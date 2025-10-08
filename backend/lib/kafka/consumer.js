@@ -11,16 +11,21 @@ class KafkaConsumerService {
     if (this.isConnected && this.consumer) return;
     const groupId = (config && config.groupId) || 'default-consumer-group';
     if (!this.kafka) this.kafka = getKafkaClient();
-    this.consumer = this.kafka.consumer({
-      groupId,
-      sessionTimeout: config && config.sessionTimeout,
-      heartbeatInterval: config && config.heartbeatInterval,
-      rebalanceTimeout: config && config.rebalanceTimeout,
-      allowAutoTopicCreation: config && config.allowAutoTopicCreation,
-      maxInFlightRequests: config && config.maxInFlightRequests,
-      maxWaitTimeInMs: config && config.maxWaitTimeInMs,
-      retry: config && config.retry
-    });
+    
+    // Build consumer config, only including defined values
+    const consumerConfig = { groupId };
+    
+    if (config) {
+      if (config.sessionTimeout !== undefined) consumerConfig.sessionTimeout = config.sessionTimeout;
+      if (config.heartbeatInterval !== undefined) consumerConfig.heartbeatInterval = config.heartbeatInterval;
+      if (config.rebalanceTimeout !== undefined) consumerConfig.rebalanceTimeout = config.rebalanceTimeout;
+      if (config.allowAutoTopicCreation !== undefined) consumerConfig.allowAutoTopicCreation = config.allowAutoTopicCreation;
+      if (config.maxInFlightRequests !== undefined) consumerConfig.maxInFlightRequests = config.maxInFlightRequests;
+      if (config.maxWaitTimeInMs !== undefined) consumerConfig.maxWaitTimeInMs = config.maxWaitTimeInMs;
+      if (config.retry !== undefined) consumerConfig.retry = config.retry;
+    }
+    
+    this.consumer = this.kafka.consumer(consumerConfig);
     await this.consumer.connect();
     this.isConnected = true;
   }

@@ -26,16 +26,16 @@ model Event {
 }
 
 model AbsoluteBbox {
-  id          String  @id @default(uuid())
-  event       Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   eventId     String
-  xywh        String
-  class_name  String
-  confidence  Float
-  subcategory String
-  color       String
-  parameters  String
-  anpr        String
+  xywh        String?
+  class_name  String?
+  confidence  Float?
+  subcategory String?
+  color       String?
+  parameters  String?
+  anpr        String?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 }

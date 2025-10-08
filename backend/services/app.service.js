@@ -64,7 +64,12 @@ class AppService {
 
     await this.consumer.consume({
       topics: { topic: this.topic, fromBeginning: false },
-      config: { groupId: this.groupId },
+      config: { 
+        groupId: this.groupId,
+        sessionTimeout: 30000,
+        heartbeatInterval: 3000,
+        rebalanceTimeout: 60000
+      },
       onMessage: async (message, topic) => {
         try {
           // eslint-disable-next-line no-console
