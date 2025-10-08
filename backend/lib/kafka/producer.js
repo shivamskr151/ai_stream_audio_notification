@@ -3,7 +3,12 @@ const { getKafkaClient } = require('./client');
 class KafkaProducerService {
   constructor() {
     this.kafka = getKafkaClient();
-    this.producer = this.kafka.producer();
+    this.producer = this.kafka.producer({
+      allowAutoTopicCreation: true,
+      transactionTimeout: 30000,
+      idempotent: false,
+      maxInFlightRequests: 5
+    });
     this.isConnected = false;
   }
 
