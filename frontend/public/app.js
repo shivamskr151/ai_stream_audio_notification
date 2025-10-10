@@ -510,12 +510,14 @@ class SSEAudioNotifier {
                 </div>
             </td>
             <td class="actions-column">
-                <button class="action-btn start-btn" title="Start audio" style="display: none;">
-                    ▶
-                </button>
-                <button class="action-btn stop-btn" title="Stop audio">
-                    ■
-                </button>
+                <div class="action-buttons">
+                    <button class="action-btn start-btn" title="Start audio" style="display: none;">
+                        ▶ Start
+                    </button>
+                    <button class="action-btn stop-btn" title="Stop audio">
+                        ■ Stop
+                    </button>
+                </div>
             </td>
         `;
 
