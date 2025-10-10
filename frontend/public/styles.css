@@ -81,7 +81,6 @@ h1 {
     gap: 8px;
     font-size: 0.9rem;
     color: #ffa500;
-    margin-top: 8px;
     padding: 4px 8px;
     background: rgba(255, 165, 0, 0.1);
     border-radius: 12px;
@@ -1234,5 +1233,110 @@ main {
         width: 32px;
         height: 32px;
         font-size: 0.9rem;
+    }
+}
+
+/* Audio Permission Prompt */
+.audio-permission-prompt {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    backdrop-filter: blur(5px);
+}
+
+.permission-content {
+    background: white;
+    padding: 40px;
+    border-radius: 20px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    margin: 20px;
+    position: relative;
+}
+
+.permission-content h3 {
+    color: #333;
+    font-size: 1.5rem;
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+.permission-content p {
+    color: #666;
+    margin-bottom: 25px;
+    line-height: 1.5;
+}
+
+.permission-content .btn {
+    padding: 12px 24px;
+    font-size: 1rem;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.permission-content .btn-primary {
+    background: #007AFF;
+    color: white;
+}
+
+.permission-content .btn-primary:hover {
+    background: #0056CC;
+    transform: translateY(-1px);
+}
+
+.permission-content .btn-close {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #f5f5f5;
+    color: #666;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: bold;
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.permission-content .btn-close:hover {
+    background: #e0e0e0;
+    color: #333;
+    transform: scale(1.1);
+}
+
+/* Mobile styles for permission prompt */
+@media (max-width: 768px) {
+    .permission-content {
+        margin: 10px;
+        padding: 30px 20px;
+    }
+    
+    .permission-content h3 {
+        font-size: 1.3rem;
+    }
+    
+    .permission-content .btn-close {
+        top: 10px;
+        right: 10px;
+        width: 28px;
+        height: 28px;
+        font-size: 14px;
     }
 }

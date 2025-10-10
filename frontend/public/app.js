@@ -13,10 +13,13 @@ class SSEAudioNotifier {
         this.stopEndTime = null; // When the stop period ends
         this.isStoppedByUser = false; // Track if stopped by user (vs automatic stop)
         this.countdownTimer = null; // Timer for countdown display
+        this.audioContext = null; // Web Audio API context
+        this.audioPermissionGranted = false; // Track audio permission status
         
         this.initializeElements();
         this.bindEvents();
         this.setupAudio();
+        this.initializeAudioPermission(); // Initialize audio permission handling
         // Preload recent events from SQLite without playing audio
         this.loadInitialEvents();
         this.connect(); // Automatically connect on page load
@@ -60,18 +63,28 @@ class SSEAudioNotifier {
         // Pagination state
         this.currentPage = 1;
         this.totalPages = 1;
-        this.pageSize = 5; // Fixed page size
+        this.pageSize = (window.__APP_CONFIG__ && Number(window.__APP_CONFIG__.maxEvents)) || 5; // Use MAX_EVENTS as page size
         this.currentSearchQuery = ''; // Current search query
+        this.realTimeTotalEvents = 0; // Track total events from SSE
+        this.eventsPerPage = new Map(); // Track events per page for real-time updates
+        this.isRealTimeMode = true; // Flag to indicate if we're in real-time mode
+        this.realTimeEvents = []; // Store real-time events for pagination
         // Initialize pagination UI with default values
         this.updatePaginationUI();
     }
 
     async loadInitialEvents() {
         try {
-            const resp = await fetch('/api/events?limit=' + ((window.__APP_CONFIG__ && Number(window.__APP_CONFIG__.maxEvents)) || 10), { cache: 'no-store' });
+            // Use MAX_EVENTS from configuration, fallback to 5 if not set
+            const maxEvents = (window.__APP_CONFIG__ && Number(window.__APP_CONFIG__.maxEvents)) || 5;
+            const resp = await fetch(`/api/events?limit=${maxEvents}`, { cache: 'no-store' });
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const payload = await resp.json();
             const events = Array.isArray(payload.events) ? payload.events : [];
+            
+            // Update real-time total events count
+            this.realTimeTotalEvents = events.length;
+            
             // Render newest to oldest with in-memory dedupe
             // Reverse the array since addEventToList() adds to the top
             for (const evt of events.slice().reverse()) {
@@ -79,7 +92,13 @@ class SSEAudioNotifier {
                 if (this.seenEventKeys.has(key)) continue;
                 this.renderEventSilently(evt);
                 this.seenEventKeys.add(key);
+                
+                // Store in real-time events array for pagination
+                this.realTimeEvents.unshift(evt);
             }
+            
+            // Update pagination after loading initial events
+            this.updatePaginationForNewEvent();
         } catch (e) {
             console.warn('Failed to preload events:', e);
         }
@@ -153,30 +172,95 @@ class SSEAudioNotifier {
         this.createFallbackAudio();
     }
 
-    createFallbackAudio() {
-        // Create a simple beep sound using Web Audio API as fallback
-        this.audioContext = null;
-        this.gainNode = null;
-        this.oscillator = null;
-        
+    initializeAudioPermission() {
+        // Initialize audio context and handle permission
         try {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            console.log('Audio context created, state:', this.audioContext.state);
+            
+            // Check if audio context is suspended (requires user interaction)
+            if (this.audioContext.state === 'suspended') {
+                console.log('Audio context is suspended - user interaction required');
+                this.audioPermissionGranted = false;
+                this.showAudioPermissionPrompt();
+            } else {
+                this.audioPermissionGranted = true;
+                console.log('Audio context is ready');
+            }
+            
+            // Set up fallback audio
             this.gainNode = this.audioContext.createGain();
             this.gainNode.connect(this.audioContext.destination);
+            
         } catch (error) {
             console.warn('Web Audio API not supported:', error);
+            this.audioPermissionGranted = false;
         }
+    }
+
+    showAudioPermissionPrompt() {
+        // Create a visual prompt for audio permission
+        const prompt = document.createElement('div');
+        prompt.id = 'audio-permission-prompt';
+        prompt.className = 'audio-permission-prompt';
+        prompt.innerHTML = `
+            <div class="permission-content">
+                <button class="btn btn-close" id="close-audio-prompt" aria-label="Close modal">✕</button>
+                <h3>🔊 Audio Permission Required</h3>
+                <p>Click the button below to enable audio notifications</p>
+                <button class="btn btn-primary" id="enable-audio-btn">Enable Audio</button>
+            </div>
+        `;
+        
+        document.body.appendChild(prompt);
+        
+        // Add click handler to enable audio
+        const enableBtn = document.getElementById('enable-audio-btn');
+        enableBtn.addEventListener('click', () => this.requestAudioPermission());
+        
+        // Add click handler to close modal
+        const closeBtn = document.getElementById('close-audio-prompt');
+        closeBtn.addEventListener('click', () => this.hideAudioPermissionPrompt());
+    }
+
+    async requestAudioPermission() {
+        if (!this.audioContext) return;
+        
+        try {
+            await this.audioContext.resume();
+            console.log('Audio context resumed, state:', this.audioContext.state);
+            
+            if (this.audioContext.state === 'running') {
+                this.audioPermissionGranted = true;
+                this.hideAudioPermissionPrompt();
+                console.log('Audio permission granted - notifications will play automatically');
+            }
+        } catch (error) {
+            console.error('Failed to resume audio context:', error);
+        }
+    }
+
+    hideAudioPermissionPrompt() {
+        const prompt = document.getElementById('audio-permission-prompt');
+        if (prompt) {
+            prompt.remove();
+        }
+    }
+
+    createFallbackAudio() {
+        // This method is now handled by initializeAudioPermission()
+        // Keep for backward compatibility but functionality moved
     }
 
     playFallbackAudio(volume) {
         if (!this.audioContext || !this.gainNode) return;
 
-        try {
-            // Resume audio context if suspended
-            if (this.audioContext.state === 'suspended') {
-                this.audioContext.resume();
-            }
+        // Only play if audio permission is granted
+        if (!this.audioPermissionGranted) {
+            return;
+        }
 
+        try {
             // Stop any existing oscillator
             if (this.oscillator) {
                 this.oscillator.stop();
@@ -229,6 +313,11 @@ class SSEAudioNotifier {
     playNotificationSequence(volume) {
         if (this.isStopping) return;
 
+        // Only play if audio permission is granted
+        if (!this.audioPermissionGranted) {
+            return;
+        }
+
         const onEnded = () => {
             this.notificationAudio.removeEventListener('ended', onEnded);
             if (this.isStopping) {
@@ -252,16 +341,14 @@ class SSEAudioNotifier {
                         this.updateStats();
                     })
                     .catch(error => {
-                        console.warn('Audio file playback failed, using fallback:', error);
+                        console.warn('Audio file playback failed:', error);
                         this.notificationAudio.removeEventListener('ended', onEnded);
                         this.isAudioPlaying = false; // Reset flag on error
-                        this.playFallbackAndMaybeRepeat(volume);
                     });
             } catch (error) {
-                console.warn('Audio playback error, using fallback:', error);
+                console.warn('Audio playback error:', error);
                 this.notificationAudio.removeEventListener('ended', onEnded);
                 this.isAudioPlaying = false; // Reset flag on error
-                this.playFallbackAndMaybeRepeat(volume);
             }
         } else {
             // Use fallback audio
@@ -274,6 +361,12 @@ class SSEAudioNotifier {
             this.isAudioPlaying = false; // Reset flag when stopping
             return;
         }
+        
+        // Only play if audio permission is granted
+        if (!this.audioPermissionGranted) {
+            return;
+        }
+        
         this.playFallbackAudio(volume);
         // Loop continuously instead of playing fixed number of times
         const t = setTimeout(() => this.playNotificationSequence(volume), 400);
@@ -392,9 +485,26 @@ class SSEAudioNotifier {
             return;
         }
         this.totalEvents++;
+        this.realTimeTotalEvents++; // Track real-time total
+        
+        // Store event data for pagination
+        this.realTimeEvents.unshift(data); // Add to beginning (newest first)
+        
+        // Limit stored events to prevent memory issues (keep last 1000 events)
+        if (this.realTimeEvents.length > 1000) {
+            this.realTimeEvents = this.realTimeEvents.slice(0, 1000);
+        }
+        
         this.updateStats();
+        
+        // Update pagination based on new event
+        this.updatePaginationForNewEvent();
+        
         // Always use current timestamp for new events (not original timestamp)
-        this.addEventToList(data, true);
+        // Only add to DOM if we're on page 1 in real-time mode
+        if (this.isRealTimeMode && this.currentPage === 1) {
+            this.addEventToList(data, true);
+        }
         this.addEventToCompactList(data, true);
         
         // If event includes an audio_url, prefer playing it; otherwise use default
@@ -467,6 +577,7 @@ class SSEAudioNotifier {
         const timeStr = timestamp.toLocaleTimeString('en-US', { 
             hour: 'numeric', 
             minute: '2-digit',
+            second: '2-digit',
             hour12: true 
         });
         
@@ -530,7 +641,7 @@ class SSEAudioNotifier {
 
         // Keep only the last N events
         const events = this.eventsList.querySelectorAll('.event-row');
-        const maxEvents = (window.__APP_CONFIG__ && Number(window.__APP_CONFIG__.maxEvents)) || 10;
+        const maxEvents = (window.__APP_CONFIG__ && Number(window.__APP_CONFIG__.maxEvents)) || 5;
         if (events.length > maxEvents) {
             events[events.length - 1].remove();
         }
@@ -613,7 +724,15 @@ class SSEAudioNotifier {
         // Reset to page 1 when searching
         this.currentPage = 1;
         
-        // Reload the current page with search
+        // If search query is empty, return to real-time mode
+        if (!searchQuery) {
+            this.isRealTimeMode = true;
+            // Reload page 1 to show real-time events
+            this.loadRealTimePage(1);
+            return;
+        }
+        
+        // Reload the current page with search (switches to API mode)
         try {
             await this.loadPage(1);
         } catch (error) {
@@ -627,8 +746,9 @@ class SSEAudioNotifier {
             this.searchInput.value = '';
             this.currentSearchQuery = '';
             this.currentPage = 1;
+            this.isRealTimeMode = true; // Return to real-time mode
             try {
-                await this.loadPage(1);
+                this.loadRealTimePage(1);
             } catch (error) {
                 console.error('Error clearing search:', error);
             }
@@ -809,20 +929,40 @@ class SSEAudioNotifier {
         // Use current timestamp when event is triggered, or original timestamp for preloaded events
         let timestamp;
         if (useCurrentTime) {
-            timestamp = new Date().toLocaleTimeString();
+            timestamp = new Date().toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true 
+            });
         } else {
             // Use original timestamp from data
             try {
                 const dateObj = new Date(data.timestamp);
                 if (isNaN(dateObj.getTime())) {
                     console.warn('Invalid timestamp in compact list:', data.timestamp);
-                    timestamp = new Date().toLocaleTimeString();
+                    timestamp = new Date().toLocaleTimeString('en-US', { 
+                        hour: 'numeric', 
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: true 
+                    });
                 } else {
-                    timestamp = dateObj.toLocaleTimeString();
+                    timestamp = dateObj.toLocaleTimeString('en-US', { 
+                        hour: 'numeric', 
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: true 
+                    });
                 }
             } catch (error) {
                 console.warn('Error parsing timestamp in compact list:', data.timestamp, error);
-                timestamp = new Date().toLocaleTimeString();
+                timestamp = new Date().toLocaleTimeString('en-US', { 
+                    hour: 'numeric', 
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true 
+                });
             }
         }
         const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
@@ -888,6 +1028,45 @@ class SSEAudioNotifier {
         if (this.audioCountSpan) this.audioCountSpan.textContent = this.audioCount;
     }
 
+    updatePaginationForNewEvent() {
+        if (!this.isRealTimeMode) return;
+        
+        // Calculate new total pages based on real-time event count
+        const newTotalPages = Math.max(1, Math.ceil(this.realTimeTotalEvents / this.pageSize));
+        
+        // Always update total pages and pagination UI for real-time mode
+        this.totalPages = newTotalPages;
+        
+        // If current page is beyond new total, go to last page
+        if (this.currentPage > this.totalPages) {
+            this.currentPage = this.totalPages;
+        }
+        
+        // Always update pagination UI to ensure buttons are in correct state
+        this.updatePaginationUI();
+        
+        // Update events per page tracking
+        this.updateEventsPerPageTracking();
+    }
+
+    updateEventsPerPageTracking() {
+        if (!this.isRealTimeMode) return;
+        
+        // Count events currently displayed on each page
+        const events = this.eventsList.querySelectorAll('.event-row');
+        const currentPageEvents = events.length;
+        
+        // Update the map with current page event count
+        this.eventsPerPage.set(this.currentPage, currentPageEvents);
+        
+        // If we're on page 1 and have more events than page size, remove excess
+        if (this.currentPage === 1 && currentPageEvents > this.pageSize) {
+            // Keep only the most recent events (page size limit)
+            const eventsToRemove = Array.from(events).slice(this.pageSize);
+            eventsToRemove.forEach(event => event.remove());
+        }
+    }
+
     updateVolumeDisplay() {
         if (!this.volumeDisplay || !this.globalVolume) return;
         
@@ -911,6 +1090,12 @@ class SSEAudioNotifier {
         const page = Number.isFinite(pageNumber) && pageNumber > 0 ? pageNumber : 1;
         const limit = Number.isFinite(this.pageSize) && this.pageSize > 0 ? this.pageSize : 10;
         
+        // If in real-time mode and no search query, handle pagination differently
+        if (this.isRealTimeMode && !this.currentSearchQuery) {
+            this.loadRealTimePage(page);
+            return;
+        }
+        
         // Build URL with search query if present
         let url = `/api/events/page?page=${page}&limit=${limit}&_t=${Date.now()}`;
         if (this.currentSearchQuery) {
@@ -923,6 +1108,10 @@ class SSEAudioNotifier {
         const events = Array.isArray(payload.events) ? payload.events : [];
         this.currentPage = Number(payload.page) || page;
         this.totalPages = Number(payload.totalPages) || 1;
+        
+        // Switch to API mode when loading specific pages
+        this.isRealTimeMode = false;
+        
         // Replace list contents with the requested page (render newest first as provided)
         if (this.eventsList) {
             this.eventsList.innerHTML = '';
@@ -941,12 +1130,44 @@ class SSEAudioNotifier {
         this.updatePaginationUI();
     }
 
+    loadRealTimePage(pageNumber) {
+        this.currentPage = pageNumber;
+        
+        // Clear current events
+        if (this.eventsList) {
+            this.eventsList.innerHTML = '';
+            
+            if (this.realTimeTotalEvents === 0) {
+                this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="4" class="no-events">No events received yet</td></tr>';
+            } else {
+                // Calculate the slice of events for this page
+                const startIndex = (pageNumber - 1) * this.pageSize;
+                const endIndex = startIndex + this.pageSize;
+                const pageEvents = this.realTimeEvents.slice(startIndex, endIndex);
+                
+                if (pageEvents.length === 0) {
+                    this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="4" class="no-events">No events on this page</td></tr>';
+                } else {
+                    // Render events for this page
+                    pageEvents.forEach(eventData => {
+                        this.renderEventSilently(eventData);
+                    });
+                }
+            }
+        }
+        
+        this.updatePaginationUI();
+    }
+
     updatePaginationUI() {
         // Update navigation buttons
         const atFirst = this.currentPage <= 1;
         const atLast = this.currentPage >= this.totalPages;
         if (this.pagePrevBtn) this.pagePrevBtn.disabled = atFirst;
         if (this.pageNextBtn) this.pageNextBtn.disabled = atLast;
+        
+        // Debug logging
+        console.log(`Pagination UI Update: currentPage=${this.currentPage}, totalPages=${this.totalPages}, atLast=${atLast}, realTimeTotalEvents=${this.realTimeTotalEvents}, pageSize=${this.pageSize}`);
         
         // Generate page numbers with ellipsis
         this.generatePageNumbers();
@@ -970,7 +1191,7 @@ class SSEAudioNotifier {
         
         if (totalPages <= 7) {
             // Show all pages if 7 or fewer
-            for (let i = 2; i <= totalPages - 1; i++) {
+            for (let i = 2; i <= totalPages; i++) {
                 this.createPageButton(i, currentPage, goTo);
             }
         } else {

@@ -67,11 +67,9 @@ async function get(req, res, next) {
 async function create(req, res, next) {
 	try {
 		// Ensure the event gets the current timestamp when created
-		const eventDataWithCurrentTimestamp = {
-			...req.body,
-			timestamp: new Date()
-		};
-		const item = await service.create(eventDataWithCurrentTimestamp);
+		const item = await service.create({
+			...req.body
+		});
 		res.status(201).json(item);
 	} catch (err) {
 		// Handle Prisma unique constraint errors
