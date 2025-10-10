@@ -392,8 +392,9 @@ class SSEAudioNotifier {
         }
         this.totalEvents++;
         this.updateStats();
-        this.addEventToList(data);
-        this.addEventToCompactList(data);
+        // Always use current timestamp for new events (not original timestamp)
+        this.addEventToList(data, true);
+        this.addEventToCompactList(data, true);
         
         // If event includes an audio_url, prefer playing it; otherwise use default
         const effectiveAudioUrl = (data && (data.audio_url || (data.data && data.data.audio_url))) || '/notification.wav';

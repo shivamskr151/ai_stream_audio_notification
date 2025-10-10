@@ -66,7 +66,12 @@ async function get(req, res, next) {
 
 async function create(req, res, next) {
 	try {
-		const item = await service.create(req.body);
+		// Ensure the event gets the current timestamp when created
+		const eventDataWithCurrentTimestamp = {
+			...req.body,
+			timestamp: new Date()
+		};
+		const item = await service.create(eventDataWithCurrentTimestamp);
 		res.status(201).json(item);
 	} catch (err) {
 		// Handle Prisma unique constraint errors
@@ -84,7 +89,12 @@ async function create(req, res, next) {
 
 async function upsert(req, res, next) {
 	try {
-		const item = await service.upsert(req.body);
+		// Ensure the event gets the current timestamp when upserted
+		const eventDataWithCurrentTimestamp = {
+			...req.body,
+			timestamp: new Date()
+		};
+		const item = await service.upsert(eventDataWithCurrentTimestamp);
 		res.status(200).json(item);
 	} catch (err) {
 		next(err);

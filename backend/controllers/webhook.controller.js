@@ -10,8 +10,14 @@ exports.handleWebhook = async (req, res) => {
     const eventData = req.body;
     console.log("Received webhook data:", eventData);
 
+    // Ensure the event gets the current timestamp when triggered
+    const eventDataWithCurrentTimestamp = {
+      ...eventData,
+      timestamp: new Date()
+    };
+
     // Step 1: Save data to DB using EventService (handles absolute_bbox properly)
-    const savedEvent = await eventService.create(eventData);
+    const savedEvent = await eventService.create(eventDataWithCurrentTimestamp);
     console.log("Saved event:", savedEvent);
 
     // Step 2: Send data to SSE clients
