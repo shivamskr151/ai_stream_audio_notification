@@ -1,8 +1,8 @@
-# Quality Assurance - Real-time Event Notifications
+# QualityAssurance - Real-time Event Notifications
 
 Created by Shivam Kumar
 
-A real-time notification system using Server-Sent Events (SSE) backed by a SQLite/Prisma data model, with optional Kafka integration. The backend exposes REST APIs for events, streams live events over SSE, and serves a static frontend UI.
+A real-time notification system using Server-Sent Events (SSE) backed by a SQLite/Prisma data model. The backend exposes REST APIs for events, streams live events over SSE, and serves a static frontend UI with pagination, search, and audio controls.
 
 ## Data Persistence (SQLite via Prisma)
 
@@ -13,13 +13,13 @@ A real-time notification system using Server-Sent Events (SSE) backed by a SQLit
 
 ## Features
 
-- **SSE stream**: Live event stream on `/events`.
-- **REST API**: CRUD endpoints under `/api/events`, plus a paginated listing.
+- **SSE stream**: Live event stream on `/events` with automatic reconnection.
+- **REST API**: Full CRUD endpoints under `/api/events` with pagination and search.
 - **Webhook Integration**: External system integration via `/api/webhook` endpoint.
-- **SQLite + Prisma**: Typed access layer with relations (e.g., absolute bounding boxes).
-- **Optional Kafka**: Consume from Kafka and forward to DB + SSE; optional producer on updates.
-- **Frontend UI**: Static SPA served from `frontend/public` with configuration from `/env.js`.
-- **Audio Notifications**: Custom audio files with Web Audio API fallback.
+- **SQLite + Prisma**: Typed access layer with simple Event model.
+- **Frontend UI**: Modern responsive interface with pagination, search, and audio controls.
+- **Audio Notifications**: Custom audio files with Web Audio API fallback and individual event controls.
+- **Search & Filtering**: Real-time search across event types, URLs, and timestamps.
 - **Environment-driven config**: All runtime values provided via `.env`.
 
 ## Project Structure
@@ -98,11 +98,11 @@ WEBHOOK_TIMEOUT=10000
 WEBHOOK_RETRY_ATTEMPTS=3
 WEBHOOK_RETRY_DELAY=1000
 
-# Optional Kafka (leave unset to disable)
-# KAFKA_BROKER=localhost:9092
-# KAFKA_CONSUMER_TOPIC=events
-# KAFKA_PRODUCER_TOPIC=events-updates
-# KAFKA_GROUP_ID=qa-service
+# Additional Configuration (optional)
+# MAX_EVENTS=1000
+# MAX_COMPACT_EVENTS=100
+# SSE_RECONNECT_MS=3000
+# DEFAULT_VOLUME=0.5
 ```
 
 ### 3) Start the Server
@@ -130,12 +130,14 @@ Navigate to `http://localhost:4021` (or the port specified in your `.env` file).
 
 ### Events API (`/api/events`)
 
-- `GET /api/events` — List events (supports `page`, `pageSize`, `limit`, `severity`, `sensor_id`, `status`)
+- `GET /api/events` — List events (supports `page`, `pageSize`, `limit`, `event_type`, `search`)
 - `GET /api/events/page` — Paginated list with `{ events, page, totalPages, totalCount, pageSize }`
 - `GET /api/events/:id` — Get event by id
-- `POST /api/events` — Create event (supports `absolute_bbox` array)
-- `PUT /api/events/:id` — Update event (also optionally produces Kafka message if configured)
+- `POST /api/events` — Create event
+- `POST /api/events/upsert` — Create or update event by image_url or audio_url
+- `PUT /api/events/:id` — Update event
 - `DELETE /api/events/:id` — Delete event
+- `DELETE /api/events` — Delete all events
 
 ### Webhook API (`/api/webhook`)
 
@@ -146,17 +148,16 @@ Navigate to `http://localhost:4021` (or the port specified in your `.env` file).
 
 ### Services and Libraries
 
-- `services/event.service.js` — Event CRUD via Prisma, bbox serialization helpers
-- `services/app.service.js` — Kafka consumer that saves events and broadcasts over SSE
+- `services/event.service.js` — Event CRUD via Prisma with search and pagination
 - `lib/prisma` — Prisma client initialization/wrapper
-- `lib/kafka` — Kafka client, consumer, and producer services
 - `lib/sse` — SSE client management and broadcast helpers
 
 ## Frontend (frontend/public/)
 
-- `index.html` — Main page
-- `styles.css` — Styles
-- `app.js` — Connects to `/events`, renders events, uses `window.__APP_CONFIG__` from `/env.js`
+- `index.html` — Main page with responsive design and modal dialogs
+- `styles.css` — Modern CSS with responsive layout and animations
+- `app.js` — SSE client with pagination, search, audio controls, and event management
+- `audio-generator.js` — Web Audio API fallback for notifications
 
 ### Event Data Structure (example)
 
@@ -184,6 +185,8 @@ The application uses SQLite with Prisma ORM. The main `Event` model includes:
 - `created_at`: DateTime - Record creation timestamp
 - `updated_at`: DateTime - Last update timestamp
 
+The schema is defined in `backend/prisma/schema.prisma` and uses Prisma's SQLite provider.
+
 **Connection event** (sent on SSE connect):
 
 ```json
@@ -206,10 +209,10 @@ The application features a modern, responsive interface with the following compo
 ### Main Interface
 
 - **Header**: Shows connection status with visual indicator, title, and stop countdown timer
-- **Events Table**: Displays recent events in a structured table format with pagination controls
-- **Search Bar**: Filter events by content, URLs, and timestamps
-- **Audio Controls**: Global volume control (inline with toolbar)
-- **Toolbar**: Search functionality and filter toggle button
+- **Events Table**: Displays events in a structured table format with pagination controls
+- **Search Bar**: Real-time search across event types, URLs, and timestamps
+- **Connection Status**: Visual indicator showing SSE connection state
+- **Stop Timer**: Shows countdown when audio is temporarily stopped
 
 ### Event Table
 
@@ -217,20 +220,28 @@ Each event displays in table format:
 
 - **Date & Time**: Formatted timestamp of the event
 - **Event Category**: Type of event (e.g., PPE, fire_and_smoke, etc.)
-- **Image / Audio**: Thumbnail preview and audio controls
-- **Actions**: Start/stop audio buttons for individual events
+- **Image / Audio**: Media buttons for viewing images and playing audio
+- **Actions**: Individual start/stop audio buttons for each event
 
 ### Pagination System
 
-- **Page Navigation**: Previous, Next buttons with page numbers
-- **Page Size**: Fixed at 10 items per page
-- **Page Info**: Current page and total pages display
+- **Page Navigation**: Previous, Next buttons with smart page numbering
+- **Page Size**: Configurable (default 5 items per page)
+- **Page Info**: Current page and total pages display with ellipsis for large datasets
+- **Search Integration**: Pagination works with search results
 
 ### Modal Features
 
-- **Image Preview**: Click any image to view in full-screen modal
-- **Stop Duration**: Modal dialog for configuring audio stop duration
+- **Image Preview**: Click any image button to view in full-screen modal
+- **Stop Duration**: Modal dialog for configuring temporary audio stop duration
 - **Responsive Design**: Works on desktop and mobile devices
+
+### Audio Controls
+
+- **Individual Event Controls**: Each event has its own start/stop buttons
+- **Temporary Stop**: Stop audio for a configurable duration with countdown timer
+- **Audio Fallback**: Web Audio API generates notification sounds if audio files fail
+- **Volume Control**: Global volume slider for all audio playback
 
 ## Customization
 
@@ -243,18 +254,14 @@ Place your audio files in the `frontend/public/` directory:
 
 **Audio Fallback**: If audio files are not available, the application includes a Web Audio API fallback (`audio-generator.js`) that generates a pleasant two-tone notification sound programmatically.
 
-### Modifying Event Frequency
+### Modifying Event Behavior
 
-Set `SSE_INTERVAL_MS` in `.env` (e.g., `SSE_INTERVAL_MS=10000` for 10 seconds). No code changes required. Default is 60 seconds.
+Events are generated from the SQLite database and broadcast via SSE. To customize event data:
 
-### Customizing Event Data
-
-The server generates events by reading from the SQLite database. To customize event data:
-
-1. **Database Events**: Events are generated from the most recent database entry
-2. **Fallback Events**: If database is empty, generates placeholder events with default URLs
-3. **Event Types**: Configure `EVENT_TYPES` in `.env` to cycle through different event types
-4. **Custom URLs**: Modify the database directly or implement custom event generation logic
+1. **Database Events**: Events are read from the database and broadcast in real-time
+2. **Webhook Integration**: External systems can send events via `/api/webhook`
+3. **Event Types**: Configure different event types in your data
+4. **Custom URLs**: Modify the database directly or use the API endpoints
 
 ### Webhook Integration
 
@@ -278,17 +285,19 @@ Example webhook payload:
 
 ## Endpoints
 
-- `GET /` — Frontend
-- `GET /events` — SSE stream
-- `GET /env.js` — Frontend runtime config
-- `GET /health` — Health check
+- `GET /` — Frontend application
+- `GET /events` — SSE stream for real-time events
+- `GET /env.js` — Frontend runtime configuration
+- `GET /health` — Health check endpoint
 - `GET /debug/db` — Database debug information
-- `GET /api/events` — List events
-- `GET /api/events/page` — Paginated listing
-- `GET /api/events/:id` — Get by ID
-- `POST /api/events` — Create event
-- `PUT /api/events/:id` — Update event
-- `DELETE /api/events/:id` — Delete event
+- `GET /api/events` — List events with search and filtering
+- `GET /api/events/page` — Paginated event listing
+- `GET /api/events/:id` — Get event by ID
+- `POST /api/events` — Create new event
+- `POST /api/events/upsert` — Create or update event
+- `PUT /api/events/:id` — Update existing event
+- `DELETE /api/events/:id` — Delete specific event
+- `DELETE /api/events` — Delete all events
 - `POST /api/webhook` — Webhook endpoint for external integrations
 
 ## Browser Compatibility
@@ -357,10 +366,11 @@ A Postman collection is included in `backend/postman/quality_approved.postman_co
 
 ### Performance
 
-- The application is optimized for multiple concurrent connections
+- The application is optimized for multiple concurrent SSE connections
 - Events are paginated to handle large datasets efficiently
 - Audio is preloaded for better performance
-- Database queries are optimized with prepared statements
+- Database queries are optimized with Prisma ORM
+- Search functionality uses database-level filtering for better performance
 
 ## Deployment
 
@@ -390,6 +400,9 @@ curl -s http://localhost:4021/debug/db | jq .
 # Reset database (WARNING: deletes data)
 rm backend/dev.db
 # Then restart the server; Prisma will recreate tables on next run
+
+# Generate Prisma client after schema changes
+cd backend && npm run prisma:generate
 ```
 
 ## License
