@@ -70,7 +70,7 @@
             <div id="image-modal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
                 <div class="modal-backdrop"></div>
                 <div class="modal-content" role="document">
-                    <button id="modal-close" class="btn btn-secondary modal-close" aria-label="Close preview">✕</button>
+                    <button id="modal-close" class="btn btn-cancel-curved" aria-label="Close preview">✕</button>
                     <img id="modal-image" alt="Preview" />
                 </div>
             </div>
@@ -79,6 +79,7 @@
             <div id="stop-duration-modal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
                 <div class="modal-backdrop"></div>
                 <div class="modal-content stop-duration-content" role="document">
+                    <button id="stop-duration-cancel" class="btn btn-cancel-curved" aria-label="Close modal">✕</button>
                     <h3>Stop Audio Duration</h3>
                     <p>How long should the audio remain stopped?</p>
                     <div class="duration-inputs">
@@ -92,7 +93,6 @@
                         </div>
                     </div>
                     <div class="modal-buttons">
-                        <button id="stop-duration-cancel" class="btn btn-secondary">Cancel</button>
                         <button id="stop-duration-confirm" class="btn btn-primary">Stop</button>
                     </div>
                 </div>

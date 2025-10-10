@@ -1013,6 +1013,45 @@ main {
     right: 8px;
 }
 
+/* Curved CANCEL button for stop duration modal */
+.btn-cancel-curved {
+    position: absolute;
+    top: -15px;
+    right: -15px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    border: none;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(231, 76, 60, 0.4);
+    transition: all 0.3s ease;
+    z-index: 10;
+    border: 3px solid #ffffff;
+}
+
+.btn-cancel-curved:hover {
+    background: linear-gradient(135deg, #c0392b, #a93226);
+    transform: translateY(-2px) scale(1.1);
+    box-shadow: 0 6px 20px rgba(231, 76, 60, 0.6);
+}
+
+.btn-cancel-curved:active {
+    transform: translateY(0) scale(1.05);
+    box-shadow: 0 2px 8px rgba(231, 76, 60, 0.4);
+}
+
+.btn-cancel-curved:focus-visible {
+    outline: 3px solid rgba(231, 76, 60, 0.5);
+    outline-offset: 2px;
+}
+
 /* Stop duration modal styles */
 .stop-duration-content {
     background: #2d3246;
