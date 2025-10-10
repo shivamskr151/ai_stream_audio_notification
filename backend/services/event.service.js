@@ -335,18 +335,35 @@ class EventService {
 	}
 
 	async list(params) {
-		const { skip, take, page, pageSize, event_type } = params || {};
+		const { skip, take, page, pageSize, event_type, search } = params || {};
 		const resolvedTakeRaw = page !== undefined ? (pageSize ?? 50) : (take ?? 50);
 		const resolvedTake = Math.min(Number(resolvedTakeRaw), 200);
 		const resolvedSkip = page !== undefined
 			? (Math.max(1, Number(page)) - 1) * resolvedTake
 			: Number(skip ?? 0);
+		
+		// Build where clause with search functionality
+		const whereClause = {};
+		
+		// Add event_type filter if provided
+		if (event_type) {
+			whereClause.event_type = event_type;
+		}
+		
+		// Add search functionality if search term is provided
+		if (search && search.trim()) {
+			const searchTerm = search.trim();
+			whereClause.OR = [
+				{ event_type: { contains: searchTerm } },
+				{ audio_url: { contains: searchTerm } },
+				{ image_url: { contains: searchTerm } }
+			];
+		}
+		
 		return this.prisma.event.findMany({
 			skip: resolvedSkip,
 			take: resolvedTake,
-			where: {
-				event_type: event_type || undefined
-			},
+			where: whereClause,
 			orderBy: { created_at: 'desc' }
 		});
 	}
@@ -416,11 +433,28 @@ class EventService {
 	}
 
 	async getTotalCount(params) {
-		const { event_type } = params || {};
+		const { event_type, search } = params || {};
+		
+		// Build where clause with search functionality
+		const whereClause = {};
+		
+		// Add event_type filter if provided
+		if (event_type) {
+			whereClause.event_type = event_type;
+		}
+		
+		// Add search functionality if search term is provided
+		if (search && search.trim()) {
+			const searchTerm = search.trim();
+			whereClause.OR = [
+				{ event_type: { contains: searchTerm } },
+				{ audio_url: { contains: searchTerm } },
+				{ image_url: { contains: searchTerm } }
+			];
+		}
+		
 		return this.prisma.event.count({
-			where: {
-				event_type: event_type || undefined
-			}
+			where: whereClause
 		});
 	}
 }

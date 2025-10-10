@@ -61,6 +61,7 @@ class SSEAudioNotifier {
         this.currentPage = 1;
         this.totalPages = 1;
         this.pageSize = 5; // Fixed page size
+        this.currentSearchQuery = ''; // Current search query
         // Initialize pagination UI with default values
         this.updatePaginationUI();
     }
@@ -601,26 +602,36 @@ class SSEAudioNotifier {
         }
     }
 
-    // Filtering: hide table rows not matching the search text across key fields
-    applyFilter() {
-        if (!this.eventsList) return;
-        const q = (this.searchInput && this.searchInput.value || '').toLowerCase().trim();
-        const rows = this.eventsList.querySelectorAll('.event-row');
-        if (!q) {
-            rows.forEach(el => el.style.display = '');
-            return;
+    // Server-side filtering: reload current page with search query
+    async applyFilter() {
+        if (!this.searchInput) return;
+        const searchQuery = this.searchInput.value.trim();
+        
+        // Store the search query for pagination
+        this.currentSearchQuery = searchQuery;
+        
+        // Reset to page 1 when searching
+        this.currentPage = 1;
+        
+        // Reload the current page with search
+        try {
+            await this.loadPage(1);
+        } catch (error) {
+            console.error('Error applying search filter:', error);
         }
-        rows.forEach(el => {
-            const text = el.textContent.toLowerCase();
-            el.style.display = text.includes(q) ? '' : 'none';
-        });
     }
 
     // Clear search input and reset filter
-    clearSearch() {
+    async clearSearch() {
         if (this.searchInput) {
             this.searchInput.value = '';
-            this.applyFilter();
+            this.currentSearchQuery = '';
+            this.currentPage = 1;
+            try {
+                await this.loadPage(1);
+            } catch (error) {
+                console.error('Error clearing search:', error);
+            }
         }
     }
 
@@ -899,7 +910,13 @@ class SSEAudioNotifier {
     async loadPage(pageNumber = 1) {
         const page = Number.isFinite(pageNumber) && pageNumber > 0 ? pageNumber : 1;
         const limit = Number.isFinite(this.pageSize) && this.pageSize > 0 ? this.pageSize : 10;
-        const url = `/api/events/page?page=${page}&limit=${limit}&_t=${Date.now()}`;
+        
+        // Build URL with search query if present
+        let url = `/api/events/page?page=${page}&limit=${limit}&_t=${Date.now()}`;
+        if (this.currentSearchQuery) {
+            url += `&search=${encodeURIComponent(this.currentSearchQuery)}`;
+        }
+        
         const resp = await fetch(url, { cache: 'no-store' });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const payload = await resp.json();
@@ -910,7 +927,10 @@ class SSEAudioNotifier {
         if (this.eventsList) {
             this.eventsList.innerHTML = '';
             if (events.length === 0) {
-                this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="4" class="no-events">No events found</td></tr>';
+                const noEventsMessage = this.currentSearchQuery 
+                    ? `No events found matching "${this.currentSearchQuery}"`
+                    : 'No events found';
+                this.eventsList.innerHTML = `<tr class="no-events-row"><td colspan="4" class="no-events">${noEventsMessage}</td></tr>`;
             } else {
                 // Reverse the array since addEventToList() adds to the top
                 for (const evt of events.slice().reverse()) {
@@ -919,8 +939,6 @@ class SSEAudioNotifier {
             }
         }
         this.updatePaginationUI();
-        // Apply current filter on the new page
-        this.applyFilter();
     }
 
     updatePaginationUI() {
