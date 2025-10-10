@@ -69,6 +69,24 @@ async function create(req, res, next) {
 		const item = await service.create(req.body);
 		res.status(201).json(item);
 	} catch (err) {
+		// Handle Prisma unique constraint errors
+		if (err.code === 'P2002') {
+			const field = err.meta?.target?.[0];
+			return res.status(409).json({ 
+				message: `Event with this ${field} already exists`,
+				field: field,
+				code: 'UNIQUE_CONSTRAINT_VIOLATION'
+			});
+		}
+		next(err);
+	}
+}
+
+async function upsert(req, res, next) {
+	try {
+		const item = await service.upsert(req.body);
+		res.status(200).json(item);
+	} catch (err) {
 		next(err);
 	}
 }
@@ -101,4 +119,4 @@ async function removeAll(req, res, next) {
 	}
 }
 
-module.exports = { list, get, create, update, remove, removeAll };
+module.exports = { list, get, create, upsert, update, remove, removeAll };

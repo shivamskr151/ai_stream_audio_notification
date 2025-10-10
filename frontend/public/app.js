@@ -3,7 +3,6 @@ class SSEAudioNotifier {
         this.eventSource = null;
         this.isConnected = false;
         this.totalEvents = 0;
-        this.totalCount = 0; // total items for current filter (from API), used for pagination
         this.audioCount = 0;
         this.currentAudio = null;
         this.isStopping = false;
@@ -14,14 +13,12 @@ class SSEAudioNotifier {
         this.stopEndTime = null; // When the stop period ends
         this.isStoppedByUser = false; // Track if stopped by user (vs automatic stop)
         this.countdownTimer = null; // Timer for countdown display
-        this.statusFilter = 'LABELLED'; // Default status filter
-        this.reconnectTimeout = null; // Track reconnect timeout to prevent multiple reconnects
-        this.lastReconnectAttempt = 0; // Track last reconnect attempt to prevent rapid reconnects
         
         this.initializeElements();
         this.bindEvents();
         this.setupAudio();
-        // Preload removed to avoid duplicate API calls; pagination handles initial load
+        // Preload recent events from SQLite without playing audio
+        this.loadInitialEvents();
         this.connect(); // Automatically connect on page load
     }
 
@@ -31,15 +28,20 @@ class SSEAudioNotifier {
         // Stop status elements
         this.stopStatus = document.getElementById('stop-status');
         this.stopCountdown = document.getElementById('stop-countdown');
-        this.eventsList = document.getElementById('events-grid');
+        this.eventsList = document.getElementById('events-list');
         // Stats elements are optional; guard for absence
         this.totalEventsSpan = document.getElementById('total-events') || null;
         this.lastEventTimeSpan = document.getElementById('last-event-time') || null;
         this.audioCountSpan = document.getElementById('audio-count') || null;
-      
+        // Global controls
+        this.globalVolume = document.getElementById('volume-slider');
+        this.volumeDisplay = document.getElementById('volume-display');
+        this.notificationAudio = document.getElementById('notification-audio');
         this.compactEventList = document.getElementById('compact-event-list');
         // Toolbar elements
         this.searchInput = document.getElementById('events-search');
+        this.toggleFiltersBtn = document.getElementById('toggle-filters');
+        this.audioControls = document.querySelector('.audio-controls-inline');
         // Compact toggle removed
         // Modal elements
         this.imageModal = document.getElementById('image-modal');
@@ -55,36 +57,17 @@ class SSEAudioNotifier {
         this.pagePrevBtn = document.getElementById('page-prev');
         this.pageNextBtn = document.getElementById('page-next');
         this.pageNumbersContainer = document.getElementById('page-numbers');
-        this.pageSizeSelect = document.getElementById('page-size');
         // Pagination state
         this.currentPage = 1;
         this.totalPages = 1;
-        // Load preferred page size from localStorage, default to 4
-        const savedPageSize = parseInt(localStorage.getItem('pageSize') || '', 8);
-        this.pageSize = Number.isFinite(savedPageSize) && savedPageSize > 0 ? savedPageSize : 8;
-        // Reflect current page size in the selector if present
-        if (this.pageSizeSelect) {
-            const valueStr = String(this.pageSize);
-            if (Array.from(this.pageSizeSelect.options).some(o => o.value === valueStr)) {
-                this.pageSizeSelect.value = valueStr;
-            }
-        }
+        this.pageSize = 5; // Fixed page size
         // Initialize pagination UI with default values
         this.updatePaginationUI();
     }
 
     async loadInitialEvents() {
         try {
-            // Build query parameters
-            const params = new URLSearchParams();
-            params.set('limit', ((window.__APP_CONFIG__ && Number(window.__APP_CONFIG__.maxEvents)) || 8).toString());
-            
-            // Add status filter if active
-            if (this.statusFilter) {
-                params.set('status', this.statusFilter);
-            }
-            
-            const resp = await fetch(`/api/events?${params.toString()}`, { cache: 'no-store' });
+            const resp = await fetch('/api/events?limit=' + ((window.__APP_CONFIG__ && Number(window.__APP_CONFIG__.maxEvents)) || 10), { cache: 'no-store' });
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const payload = await resp.json();
             const events = Array.isArray(payload.events) ? payload.events : [];
@@ -103,8 +86,9 @@ class SSEAudioNotifier {
 
     renderEventSilently(data) {
         // Do not increment counters or play audio for preloaded history
-        this.addEventToList(data);
-        this.addEventToCompactList(data);
+        // For preloaded events, use the original timestamp from the data
+        this.addEventToList(data, false); // false = use original timestamp
+        this.addEventToCompactList(data, false); // false = use original timestamp
     }
 
     bindEvents() {
@@ -112,16 +96,17 @@ class SSEAudioNotifier {
         if (this.searchInput) {
             this.searchInput.addEventListener('input', () => this.applyFilter());
         }
-        
-        // Filter buttons
-        this.filterLabelledBtn = document.getElementById('filter-labelled');
-        this.clearFilterBtn = document.getElementById('clear-filter');
-        
-        if (this.filterLabelledBtn) {
-            this.filterLabelledBtn.addEventListener('click', () => this.filterByLabelled());
+        if (this.toggleFiltersBtn) {
+            this.toggleFiltersBtn.addEventListener('click', () => this.toggleFilters());
         }
-        if (this.clearFilterBtn) {
-            this.clearFilterBtn.addEventListener('click', () => this.clearStatusFilter());
+        // Compact toggle removed
+        // Global controls
+        if (this.globalVolume) {
+            this.globalVolume.addEventListener('input', () => {
+                const v = Math.max(0, Math.min(1, Number(this.globalVolume.value) / 100));
+                this.notificationAudio.volume = v;
+                this.updateVolumeDisplay();
+            });
         }
         // No global Start/Stop; only row-level controls remain
 
@@ -152,28 +137,16 @@ class SSEAudioNotifier {
         const goTo = (n) => this.loadPage(n).catch((e) => console.warn('Pagination load failed:', e));
         if (this.pagePrevBtn) this.pagePrevBtn.addEventListener('click', () => goTo(Math.max(1, this.currentPage - 1)));
         if (this.pageNextBtn) this.pageNextBtn.addEventListener('click', () => goTo(Math.min(this.totalPages, this.currentPage + 1)));
-
-        // Page size change
-        if (this.pageSizeSelect) {
-            this.pageSizeSelect.addEventListener('change', () => {
-                const nextSize = parseInt(this.pageSizeSelect.value, 10);
-                if (Number.isFinite(nextSize) && nextSize > 0) {
-                    this.pageSize = nextSize;
-                    localStorage.setItem('pageSize', String(nextSize));
-                    // Reset to first page and reload with new size
-                    this.currentPage = 1;
-                    this.loadPage(1).catch((e) => console.warn('Failed to reload with new page size:', e));
-                }
-            });
-        }
     }
 
     setupAudio() {
-        // Set initial volume (guard if no audio element available)
+        // Set initial volume
         const defaultVolume = (window.__APP_CONFIG__ && Number(window.__APP_CONFIG__.volume)) || 1.0;
-        if (this.notificationAudio) {
-            this.notificationAudio.volume = defaultVolume;
-        }
+        this.notificationAudio.volume = defaultVolume;
+        if (this.globalVolume) this.globalVolume.value = String(Math.round(defaultVolume * 100));
+        
+        // Set initial volume display
+        this.updateVolumeDisplay();
         
         // Create a simple notification sound using Web Audio API if no audio file is available
         this.createFallbackAudio();
@@ -233,7 +206,22 @@ class SSEAudioNotifier {
 
     playNotificationSound(options = {}) {
         // Orchestrate a sequence using provided per-row options
-        const volume = typeof options.volume === 'number' ? options.volume : (this.notificationAudio ? this.notificationAudio.volume : 1.0);
+        const volume = typeof options.volume === 'number' ? options.volume : this.notificationAudio.volume;
+        this.playNotificationSequence(volume);
+    }
+
+    playNotificationSoundWithUrl(audioUrl, options = {}) {
+        // Set the audio source to the specific URL
+        if (audioUrl) {
+            try {
+                this.notificationAudio.src = audioUrl;
+            } catch (e) {
+                console.warn('Failed to set audio source:', e);
+            }
+        }
+        
+        // Orchestrate a sequence using provided per-row options
+        const volume = typeof options.volume === 'number' ? options.volume : this.notificationAudio.volume;
         this.playNotificationSequence(volume);
     }
 
@@ -242,16 +230,18 @@ class SSEAudioNotifier {
 
         const onEnded = () => {
             this.notificationAudio.removeEventListener('ended', onEnded);
-            if (this.isStopping) return;
+            if (this.isStopping) {
+                this.isAudioPlaying = false; // Reset flag when stopping
+                return;
+            }
             // Loop continuously instead of playing fixed number of times
             const t = setTimeout(() => this.playNotificationSequence(volume), 150);
             this.pendingTimeouts.push(t);
         };
 
         // Try to play the audio file first
-        if (this.notificationAudio && this.notificationAudio.src && this.notificationAudio.src !== window.location.href) {
+        if (this.notificationAudio.src && this.notificationAudio.src !== window.location.href) {
             try {
-                if (!this.notificationAudio) throw new Error('No audio element');
                 this.notificationAudio.currentTime = 0;
                 this.notificationAudio.volume = typeof volume === 'number' ? volume : this.notificationAudio.volume;
                 this.notificationAudio.addEventListener('ended', onEnded);
@@ -263,11 +253,13 @@ class SSEAudioNotifier {
                     .catch(error => {
                         console.warn('Audio file playback failed, using fallback:', error);
                         this.notificationAudio.removeEventListener('ended', onEnded);
+                        this.isAudioPlaying = false; // Reset flag on error
                         this.playFallbackAndMaybeRepeat(volume);
                     });
             } catch (error) {
                 console.warn('Audio playback error, using fallback:', error);
                 this.notificationAudio.removeEventListener('ended', onEnded);
+                this.isAudioPlaying = false; // Reset flag on error
                 this.playFallbackAndMaybeRepeat(volume);
             }
         } else {
@@ -277,7 +269,10 @@ class SSEAudioNotifier {
     }
 
     playFallbackAndMaybeRepeat(volume) {
-        if (this.isStopping) return;
+        if (this.isStopping) {
+            this.isAudioPlaying = false; // Reset flag when stopping
+            return;
+        }
         this.playFallbackAudio(volume);
         // Loop continuously instead of playing fixed number of times
         const t = setTimeout(() => this.playNotificationSequence(volume), 400);
@@ -297,14 +292,10 @@ class SSEAudioNotifier {
 
         // Stop audio file
         if (this.notificationAudio) {
-            try {
-                this.notificationAudio.pause();
-                this.notificationAudio.currentTime = 0;
-                // Remove any pending event listeners
-                this.notificationAudio.removeEventListener('ended', () => {});
-            } catch (e) {
-                // ignore
-            }
+            this.notificationAudio.pause();
+            this.notificationAudio.currentTime = 0;
+            // Remove any pending event listeners
+            this.notificationAudio.removeEventListener('ended', () => {});
         }
 
         // Stop fallback audio
@@ -355,22 +346,7 @@ class SSEAudioNotifier {
 
             this.eventSource.onerror = (error) => {
                 console.error('SSE connection error:', error);
-                console.log('EventSource readyState:', this.eventSource?.readyState);
-                console.log('EventSource URL:', this.eventSource?.url);
-                
-                // Check if this is a connection failure vs temporary error
-                if (this.eventSource && this.eventSource.readyState === EventSource.CLOSED) {
-                    this.updateConnectionStatus('Connection Closed - Reconnecting...', 'status-disconnected');
-                } else {
-                    this.updateConnectionStatus('Connection Error', 'status-disconnected');
-                }
-                
-                // Prevent rapid reconnection attempts
-                const now = Date.now();
-                if (now - this.lastReconnectAttempt < 5000) { // Wait at least 5 seconds between attempts
-                    console.log('Skipping reconnect - too soon since last attempt');
-                    return;
-                }
+                this.updateConnectionStatus('Connection Error', 'status-disconnected');
                 this.reconnect();
             };
 
@@ -382,12 +358,6 @@ class SSEAudioNotifier {
 
 
     reconnect() {
-        // Clear any existing reconnect timeout
-        if (this.reconnectTimeout) {
-            clearTimeout(this.reconnectTimeout);
-            this.reconnectTimeout = null;
-        }
-        
         if (this.isConnected) {
             // Close existing connection
             if (this.eventSource) {
@@ -398,14 +368,9 @@ class SSEAudioNotifier {
             this.updateConnectionStatus('Reconnecting...', 'status-disconnected');
             
             const reconnectMs = (window.__APP_CONFIG__ && Number(window.__APP_CONFIG__.reconnectMs)) || 3000;
-            this.lastReconnectAttempt = Date.now();
-            this.reconnectTimeout = setTimeout(() => {
+            setTimeout(() => {
                 this.connect();
             }, reconnectMs); // Reconnect after configured ms
-        } else {
-            // If not connected, try to connect immediately
-            this.lastReconnectAttempt = Date.now();
-            this.connect();
         }
     }
 
@@ -415,168 +380,234 @@ class SSEAudioNotifier {
             return;
         }
         
+        // If we're in a user-initiated stop period, ignore the event
+        if (this.isStoppedByUser && this.stopEndTime && Date.now() < this.stopEndTime) {
+            console.log('Audio is stopped by user, ignoring event');
+            return;
+        }
+        
         const key = this.getEventKey(data);
         if (this.seenEventKeys.has(key)) {
             return;
         }
-        
         this.totalEvents++;
         this.updateStats();
-        // Only count towards pagination if item matches active status filter (if any)
-        const matchesStatusFilter = !this.statusFilter || (data && data.status === this.statusFilter);
-
-        // Render into lists regardless to maintain real-time view
         this.addEventToList(data);
         this.addEventToCompactList(data);
+        
+        // If event includes an audio_url, prefer playing it; otherwise use default
+        const effectiveAudioUrl = (data && (data.audio_url || (data.data && data.data.audio_url))) || '/notification.wav';
+        if (effectiveAudioUrl) {
+            const url = effectiveAudioUrl;
+            try {
+                this.notificationAudio.src = url;
+            } catch (e) {
+                // keep existing source on error
+            }
+        }
+        
+        // Autoplay new events - always allow new events to play audio
         this.seenEventKeys.add(key);
-
-        // Keep first page stable: if we're viewing page 1 and have more than pageSize items, trim the tail
-        if (this.currentPage === 1 && this.eventsList) {
-            const items = this.eventsList.querySelectorAll('.event-item');
-            const limit = Number.isFinite(this.pageSize) && this.pageSize > 0 ? this.pageSize : items.length;
-            if (items.length > limit) {
-                // Remove extras from the bottom until length === limit
-                for (let i = items.length - 1; i >= limit; i--) {
-                    items[i].remove();
+        // Stop any existing audio and start new audio
+        this.isStopping = false;
+        this.pendingTimeouts.forEach(t => clearTimeout(t));
+        this.pendingTimeouts = [];
+        this.isAudioPlaying = true; // Mark audio as playing
+        this.playNotificationSound();
+        
+        // Update button states for the newly added event
+        setTimeout(() => {
+            const latestEventRow = this.eventsList.querySelector('.event-row');
+            if (latestEventRow) {
+                const startBtn = latestEventRow.querySelector('.start-btn');
+                const stopBtn = latestEventRow.querySelector('.stop-btn');
+                if (startBtn && stopBtn) {
+                    startBtn.style.display = 'none';
+                    stopBtn.style.display = 'flex';
                 }
             }
-        }
-
-        // Update pagination totals dynamically for matching items
-        if (matchesStatusFilter) {
-            const nextTotal = (Number.isFinite(this.totalCount) && this.totalCount >= 0) ? (this.totalCount + 1) : this.totalCount;
-            if (Number.isFinite(nextTotal)) {
-                this.totalCount = nextTotal;
-                const size = Number.isFinite(this.pageSize) && this.pageSize > 0 ? this.pageSize : 1;
-                this.totalPages = Math.max(1, Math.ceil(this.totalCount / size));
-                this.updatePaginationUI();
-            }
-        }
+        }, 100);
     }
 
-    addEventToList(data) {
+    addEventToList(data, useCurrentTime = true) {
         // Remove "no events" message if it exists
-        const noEventsItem = this.eventsList.querySelector('.no-events-item');
-        if (noEventsItem) {
-            noEventsItem.remove();
+        const noEventsRow = this.eventsList.querySelector('.no-events-row');
+        if (noEventsRow) {
+            noEventsRow.remove();
         }
 
-        const eventItem = document.createElement('div');
-        eventItem.className = 'event-item';
-        eventItem.setAttribute('data-event-id', String(data.id ?? ''));
+        const eventRow = document.createElement('tr');
+        eventRow.className = 'event-row';
         
-        // Extract only the required fields
-        const status = data.status || 'Unknown';
-        const orgImgLocal = data.org_img || '/placeholder.svg';
-        const timestampRaw = this.resolveTimestamp(data);
-        const timestampStr = this.formatTimestamp(timestampRaw);
-        const subcategoriesRaw = Array.isArray(data?.absolute_bbox)
-            ? data.absolute_bbox.map(b => b && b.subcategory).filter(Boolean)
-            : [];
-        const groupedByCategory = new Map();
-        subcategoriesRaw.forEach((value) => {
-            const str = String(value);
-            const parts = str.split('-', 2);
-            const category = parts[0] || str;
-            const suffix = parts.length > 1 ? parts[1] : str;
-            if (!groupedByCategory.has(category)) {
-                groupedByCategory.set(category, { items: [], seenSuffixes: new Set() });
+        // Use current timestamp when event is triggered, or original timestamp for preloaded events
+        let timestamp;
+        if (useCurrentTime) {
+            timestamp = new Date();
+        } else {
+            // Use original timestamp from data
+            try {
+                timestamp = new Date(data.timestamp);
+                if (isNaN(timestamp.getTime())) {
+                    console.warn('Invalid timestamp received:', data.timestamp);
+                    timestamp = new Date(); // Fallback to current time
+                }
+            } catch (error) {
+                console.warn('Error parsing timestamp:', data.timestamp, error);
+                timestamp = new Date(); // Fallback to current time
             }
-            const group = groupedByCategory.get(category);
-            if (group.items.length === 0) {
-                group.items.push(str); // first occurrence: full value e.g., PPE-Helmet
-                group.seenSuffixes.add(suffix);
-            } else if (!group.seenSuffixes.has(suffix)) {
-                group.items.push(suffix); // subsequent unique suffix only
-                group.seenSuffixes.add(suffix);
-            }
+        }
+        
+        const dateStr = timestamp.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric' 
         });
-        const subcategoriesHtml = Array.from(groupedByCategory.values())
-            .map(group => `<div class="event-subcategories-row">${group.items.join(', ')}</div>`)
-            .join('');
+        const timeStr = timestamp.toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit',
+            hour12: true 
+        });
         
-        eventItem.innerHTML = `
-            <img src="${orgImgLocal}" alt="Event Image" class="event-image">
-            <div class="event-meta">
-                <span class="event-timestamp" title="Event time">${timestampStr}</span>
-            </div>
-            <div class="event-subcategories" title="Detected subcategories">${subcategoriesHtml}</div>
-            <div class="event-actions">
-                <button class="action-btn approve-btn" data-event-id="${data.id}" title="Approve Event">
-                    ✅ APPROVE
+        // Extract common fields with defaults
+        const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
+        const imageUrl = (data.image_url || (data.data && data.data.image_url) || '/placeholder.svg');
+        
+        // Use event_type from backend, fallback to media-based category
+        let eventCategory = data.event_type || 'Media Event';
+        if (!data.event_type) {
+            // Fallback: Generate event category based on available media
+            if (audioUrl && imageUrl) {
+                eventCategory = 'Audio & Image Event';
+            } else if (audioUrl) {
+                eventCategory = 'Audio Event';
+            } else if (imageUrl) {
+                eventCategory = 'Image Event';
+            }
+        }
+        
+        
+        eventRow.innerHTML = `
+            <td class="date-time-column">
+                <div class="date">${dateStr}</div>
+                <div class="time">${timeStr}</div>
+            </td>
+            <td class="event-category-column">
+                <div class="event-category">${eventCategory}</div>
+            </td>
+            <td class="media-column">
+                <div class="media-buttons">
+                    ${imageUrl ? `
+                        <button class="media-btn image-btn" data-image-url="${imageUrl}">
+                            📷 Image
+                        </button>
+                    ` : ''}
+                    ${audioUrl ? `
+                        <button class="media-btn video-btn" data-audio-url="${audioUrl}">
+                            🎵 Audio
+                        </button>
+                    ` : ''}
+                </div>
+            </td>
+            <td class="actions-column">
+                <button class="action-btn start-btn" title="Start audio" style="display: none;">
+                    ▶
                 </button>
-                <button class="action-btn reject-btn" data-event-id="${data.id}" title="Reject Event">
-                    ❌ REJECT
+                <button class="action-btn stop-btn" title="Stop audio">
+                    ■
                 </button>
-            </div>
+            </td>
         `;
 
-        // Add to the top of the grid
-        this.eventsList.insertBefore(eventItem, this.eventsList.firstChild);
+        // Add to the top of the table
+        this.eventsList.insertBefore(eventRow, this.eventsList.firstChild);
 
         // Wire event handlers
-        this.wireEventHandlers(eventItem, data);
-
-        // Apply search filter only (status filtering handled by backend)
-        this.applyFilter();
+        this.wireEventHandlers(eventRow, data);
 
         // Keep only the last N events
-        const events = this.eventsList.querySelectorAll('.event-item');
+        const events = this.eventsList.querySelectorAll('.event-row');
         const maxEvents = (window.__APP_CONFIG__ && Number(window.__APP_CONFIG__.maxEvents)) || 10;
         if (events.length > maxEvents) {
             events[events.length - 1].remove();
         }
+
+        // Update last event time
+        if (this.lastEventTimeSpan) this.lastEventTimeSpan.textContent = timestamp.toLocaleString();
     }
 
     wireEventHandlers(eventRow, data) {
-        // Image click handler to show in modal
-        const eventImage = eventRow.querySelector('.event-image');
-        if (eventImage) {
-            eventImage.addEventListener('click', (e) => {
+        // Image button handler
+        const imageBtn = eventRow.querySelector('.image-btn');
+        if (imageBtn) {
+            imageBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const imageUrl = eventImage.src;
+                const imageUrl = imageBtn.getAttribute('data-image-url');
                 this.showModal(imageUrl);
             });
         }
 
-        // Approve button handler
-        const approveBtn = eventRow.querySelector('.approve-btn');
-        if (approveBtn) {
-            approveBtn.addEventListener('click', (e) => {
+        // Audio button handler
+        const audioBtn = eventRow.querySelector('.video-btn');
+        if (audioBtn) {
+            audioBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const eventId = approveBtn.getAttribute('data-event-id');
-                this.updateEventStatus(eventId, 'APPROVED');
+                this.isStopping = false;
+                this.pendingTimeouts.forEach(t => clearTimeout(t));
+                this.pendingTimeouts = [];
+                this.isAudioPlaying = true;
+                // Use the specific audio_url from this event
+                const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
+                this.playNotificationSoundWithUrl(audioUrl);
             });
         }
 
-        // Reject button handler
-        const rejectBtn = eventRow.querySelector('.reject-btn');
-        if (rejectBtn) {
-            rejectBtn.addEventListener('click', (e) => {
+        // Start button handler
+        const startBtn = eventRow.querySelector('.start-btn');
+        if (startBtn) {
+            startBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const eventId = rejectBtn.getAttribute('data-event-id');
-                this.updateEventStatus(eventId, 'REJECTED');
+                this.isStopping = false;
+                this.pendingTimeouts.forEach(t => clearTimeout(t));
+                this.pendingTimeouts = [];
+                this.isAudioPlaying = true;
+                // Use the specific audio_url from this event
+                const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
+                this.playNotificationSoundWithUrl(audioUrl);
+                // Hide start button and show stop button
+                startBtn.style.display = 'none';
+                const stopBtn = eventRow.querySelector('.stop-btn');
+                if (stopBtn) stopBtn.style.display = 'flex';
+            });
+        }
+
+        // Stop button handler
+        const stopBtn = eventRow.querySelector('.stop-btn');
+        if (stopBtn) {
+            stopBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.stopAudio();
+                // Hide stop button and show start button
+                stopBtn.style.display = 'none';
+                const startBtn = eventRow.querySelector('.start-btn');
+                if (startBtn) startBtn.style.display = 'flex';
             });
         }
     }
 
-    // Filtering: hide grid items not matching the search text (status filtering handled by backend)
+    // Filtering: hide table rows not matching the search text across key fields
     applyFilter() {
         if (!this.eventsList) return;
         const q = (this.searchInput && this.searchInput.value || '').toLowerCase().trim();
-        const items = this.eventsList.querySelectorAll('.event-item');
-        
+        const rows = this.eventsList.querySelectorAll('.event-row');
         if (!q) {
-            // Show all items if no search text
-            items.forEach(el => el.style.display = '');
+            rows.forEach(el => el.style.display = '');
             return;
         }
-        
-        // Apply search filter only
-        items.forEach(el => {
+        rows.forEach(el => {
             const text = el.textContent.toLowerCase();
             el.style.display = text.includes(q) ? '' : 'none';
         });
@@ -590,61 +621,18 @@ class SSEAudioNotifier {
         }
     }
 
-    // Filter by LABELLED status
-    async filterByLabelled() {
-        this.statusFilter = 'LABELLED';
-        this.updateFilterButtons();
-        // Reload data from backend with status filter
-        await this.reloadData();
+    // Toggle visibility of audio controls section
+    toggleFilters() {
+        if (!this.audioControls || !this.toggleFiltersBtn) return;
+        const isHidden = this.audioControls.classList.toggle('hidden');
+        this.toggleFiltersBtn.setAttribute('aria-expanded', String(!isHidden));
+        this.toggleFiltersBtn.setAttribute('title', isHidden ? 'Show filters' : 'Hide filters');
     }
-
-    // Clear status filter
-    async clearStatusFilter() {
-        this.statusFilter = null;
-        this.updateFilterButtons();
-        // Reload data from backend without status filter
-        await this.reloadData();
-    }
-
-    // Reload data from backend based on current filters
-    async reloadData() {
-        try {
-            // Clear current events
-            if (this.eventsList) {
-                this.eventsList.innerHTML = '<div class="no-events-item"><div class="no-events">Loading...</div></div>';
-            }
-            
-            // Reset pagination to first page
-            this.currentPage = 1;
-            
-            // Load first page with current filters
-            await this.loadPage(1);
-        } catch (error) {
-            console.error('Failed to reload data:', error);
-            if (this.eventsList) {
-                this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="3" class="no-events">Error loading events</td></tr>';
-            }
-        }
-    }
-
-    // Update filter button states
-    updateFilterButtons() {
-        if (this.filterLabelledBtn && this.clearFilterBtn) {
-            if (this.statusFilter === 'LABELLED') {
-                this.filterLabelledBtn.style.display = 'none';
-                this.clearFilterBtn.style.display = 'inline-block';
-            } else {
-                this.filterLabelledBtn.style.display = 'inline-block';
-                this.clearFilterBtn.style.display = 'none';
-            }
-        }
-    }
-
 
     // Clear events list safely
     clearEvents() {
         if (!this.eventsList) return;
-        this.eventsList.innerHTML = '<div class="no-events-item"><div class="no-events">No events received yet</div></div>';
+        this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="4" class="no-events">No events received yet</td></tr>';
     }
 
     // Compact density toggle removed
@@ -798,23 +786,40 @@ class SSEAudioNotifier {
     }
 
 
-    addEventToCompactList(data) {
+    addEventToCompactList(data, useCurrentTime = true) {
         if (!this.compactEventList) return;
         const empty = this.compactEventList.querySelector('.empty');
         if (empty) empty.remove();
 
         const li = document.createElement('li');
-        const status = data.status || 'Unknown';
-        const orgImgLocal = data.org_img || '/placeholder.svg';
-        const timestampRaw = this.resolveTimestamp(data);
-        const timestampStr = this.formatTimestamp(timestampRaw);
+        // Use current timestamp when event is triggered, or original timestamp for preloaded events
+        let timestamp;
+        if (useCurrentTime) {
+            timestamp = new Date().toLocaleTimeString();
+        } else {
+            // Use original timestamp from data
+            try {
+                const dateObj = new Date(data.timestamp);
+                if (isNaN(dateObj.getTime())) {
+                    console.warn('Invalid timestamp in compact list:', data.timestamp);
+                    timestamp = new Date().toLocaleTimeString();
+                } else {
+                    timestamp = dateObj.toLocaleTimeString();
+                }
+            } catch (error) {
+                console.warn('Error parsing timestamp in compact list:', data.timestamp, error);
+                timestamp = new Date().toLocaleTimeString();
+            }
+        }
+        const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
+        const imageUrl = (data.image_url || (data.data && data.data.image_url) || '/placeholder.svg');
+        const label = (audioUrl || imageUrl) ? 'media' : (data.event_type || 'event');
         li.innerHTML = `
-            <span class="status">${status}</span>
-            <img src="${orgImgLocal}" alt="Event Image" class="compact-event-image" style="max-width: 50px; max-height: 50px; object-fit: cover; border-radius: 4px;">
-            <span class="timestamp" title="Event time" style="font-size: 12px; color: #666; margin-left: 8px;">${timestampStr}</span>
-            <div class="compact-actions">
-                <button class="btn btn-tiny approve-btn" data-event-id="${data.id}" title="Approve Event">✅</button>
-                <button class="btn btn-tiny reject-btn" data-event-id="${data.id}" title="Reject Event">❌</button>
+            <span class="etype">${label}</span>
+            <span class="time">${timestamp}</span>
+            <div class="row-audio-controls">
+                <button class="btn btn-tiny btn-start start-audio-row" title="Start audio" aria-label="Start audio" style="display: none;">▶ Start</button>
+                <button class="btn btn-tiny btn-stop stop-audio-row" title="Stop audio" aria-label="Stop audio">■ Stop</button>
             </div>
         `;
         this.compactEventList.insertBefore(li, this.compactEventList.firstChild);
@@ -826,35 +831,35 @@ class SSEAudioNotifier {
             items[items.length - 1].remove();
         }
 
-        // Wire image click handler for compact item
-        const compactImage = li.querySelector('.compact-event-image');
-        if (compactImage) {
-            compactImage.addEventListener('click', (e) => {
+        // Wire per-row start/stop handlers for compact item
+        const startBtn2 = li.querySelector('.start-audio-row');
+        if (startBtn2) {
+            startBtn2.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const imageUrl = compactImage.src;
-                this.showModal(imageUrl);
+                this.isStopping = false;
+                this.pendingTimeouts.forEach(t => clearTimeout(t));
+                this.pendingTimeouts = [];
+                this.isAudioPlaying = true; // Mark audio as playing
+                // Use the specific audio_url from this event
+                const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
+                this.playNotificationSoundWithUrl(audioUrl);
+                // Hide start button and show stop button
+                startBtn2.style.display = 'none';
+                const stopBtn2 = li.querySelector('.stop-audio-row');
+                if (stopBtn2) stopBtn2.style.display = 'inline-block';
             });
         }
-
-        // Wire status button handlers for compact item
-        const compactApproveBtn = li.querySelector('.approve-btn');
-        if (compactApproveBtn) {
-            compactApproveBtn.addEventListener('click', (e) => {
+        const stopBtn2 = li.querySelector('.stop-audio-row');
+        if (stopBtn2) {
+            stopBtn2.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const eventId = compactApproveBtn.getAttribute('data-event-id');
-                this.updateEventStatus(eventId, 'APPROVED');
-            });
-        }
-
-        const compactRejectBtn = li.querySelector('.reject-btn');
-        if (compactRejectBtn) {
-            compactRejectBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const eventId = compactRejectBtn.getAttribute('data-event-id');
-                this.updateEventStatus(eventId, 'REJECTED');
+                this.stopAudio();
+                // Hide stop button and show start button
+                stopBtn2.style.display = 'none';
+                const startBtn2 = li.querySelector('.start-audio-row');
+                if (startBtn2) startBtn2.style.display = 'inline-block';
             });
         }
     }
@@ -869,219 +874,49 @@ class SSEAudioNotifier {
         if (this.audioCountSpan) this.audioCountSpan.textContent = this.audioCount;
     }
 
+    updateVolumeDisplay() {
+        if (!this.volumeDisplay || !this.globalVolume) return;
+        
+        const volumeValue = Number(this.globalVolume.value);
+        if (volumeValue === 100) {
+            this.volumeDisplay.textContent = 'Full';
+        } else {
+            this.volumeDisplay.textContent = String(volumeValue);
+        }
+    }
 
     getEventKey(evt) {
-        const tsCandidate = (evt && (evt.timestamp || evt.created_at || evt.datetimestamp_trackerid)) || '';
-        const ts = String(tsCandidate);
-        const status = evt && evt.status ? String(evt.status) : '';
-        const orgImgLocal = evt && evt.org_img ? String(evt.org_img) : '';
-        return `${ts}|${status}|${orgImgLocal}`;
-    }
-
-    // Format timestamps into a readable local date/time string
-    formatTimestamp(ts) {
-        if (!ts) return '—';
-        try {
-            const date = new Date(ts);
-            if (Number.isNaN(date.getTime())) return '—';
-            return date.toLocaleString(undefined, {
-                year: 'numeric',
-                month: 'short',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
-            });
-        } catch (_) {
-            return '—';
-        }
-    }
-
-    // Resolve a usable timestamp from multiple possible backend fields
-    resolveTimestamp(evt) {
-        if (!evt) return null;
-        if (evt.timestamp) return evt.timestamp;
-        if (evt.created_at) return evt.created_at;
-        // Some payloads may embed ISO date before a '#'
-        if (evt.datetimestamp_trackerid) {
-            const raw = String(evt.datetimestamp_trackerid);
-            const maybeIso = raw.split('#')[0];
-            if (maybeIso) return maybeIso;
-        }
-        return null;
-    }
-
-    async updateEventStatus(eventId, newStatus) {
-        try {
-            console.log(`Updating event ${eventId} status to ${newStatus}`);
-            
-            const response = await fetch(`/api/events/${eventId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ status: newStatus })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const updatedEvent = await response.json();
-            console.log(`Event ${eventId} status updated to ${newStatus}`, updatedEvent);
-
-            // Update the UI optimistically
-            this.updateEventStatusInUI(eventId, newStatus);
-            // If current filter would exclude this item now, remove it and backfill
-            this.maybeRemoveAndBackfill(eventId, newStatus);
-
-        } catch (error) {
-            console.error('Failed to update event status:', error);
-            alert(`Failed to update event status: ${error.message}`);
-        }
-    }
-
-    updateEventStatusInUI(eventId, newStatus) {
-        console.log(`Updating UI for event ${eventId} to status ${newStatus}`);
-        console.log('eventsList exists:', !!this.eventsList);
-        console.log('compactEventList exists:', !!this.compactEventList);
-        
-        // Update main event list
-        if (this.eventsList) {
-            const eventItems = this.eventsList.querySelectorAll('.event-item');
-            console.log(`Found ${eventItems.length} event items in main list`);
-            
-            for (const item of eventItems) {
-                const approveBtn = item.querySelector('.approve-btn');
-                const rejectBtn = item.querySelector('.reject-btn');
-                
-                if (approveBtn && approveBtn.getAttribute('data-event-id') === eventId) {
-                    console.log(`Found matching event item for ${eventId} in main list`);
-                    
-                    // No badge anymore; just log success
-                    console.log(`Updated status for ${eventId} to ${newStatus}`);
-
-                    // Disable both buttons after status change
-                    if (approveBtn) {
-                        approveBtn.disabled = true;
-                        approveBtn.textContent = newStatus === 'APPROVED' ? '✅ APPROVED' : '✅ APPROVE';
-                    }
-                    if (rejectBtn) {
-                        rejectBtn.disabled = true;
-                        rejectBtn.textContent = newStatus === 'REJECTED' ? '❌ REJECTED' : '❌ REJECT';
-                    }
-                    break;
-                }
-            }
-        } else {
-            console.warn('eventsList is null, cannot update main list');
-        }
-
-        // Update compact event list
-        if (this.compactEventList) {
-            const compactItems = this.compactEventList.querySelectorAll('li');
-            console.log(`Found ${compactItems.length} compact items`);
-            
-            for (const item of compactItems) {
-                const approveBtn = item.querySelector('.approve-btn');
-                const rejectBtn = item.querySelector('.reject-btn');
-                
-                if (approveBtn && approveBtn.getAttribute('data-event-id') === eventId) {
-                    console.log(`Found matching event item for ${eventId} in compact list`);
-                    
-                    // Update the status display
-                    const statusSpan = item.querySelector('.status');
-                    if (statusSpan) {
-                        statusSpan.textContent = newStatus;
-                        console.log(`Updated compact status display to ${newStatus}`);
-                    }
-
-                    // Disable both buttons after status change
-                    if (approveBtn) {
-                        approveBtn.disabled = true;
-                        approveBtn.textContent = newStatus === 'APPROVED' ? '✅' : '✅';
-                    }
-                    if (rejectBtn) {
-                        rejectBtn.disabled = true;
-                        rejectBtn.textContent = newStatus === 'REJECTED' ? '❌' : '❌';
-                    }
-                    break;
-                }
-            }
-        } else {
-            console.warn('compactEventList is null, cannot update compact list');
-        }
-    }
-
-    // If an item no longer matches the active filter (e.g., filter LABELLED but status becomes APPROVED),
-    // remove it from the grid and fetch the next page item to keep the grid full.
-    maybeRemoveAndBackfill(eventId, newStatus) {
-        const isFiltered = this.statusFilter && typeof this.statusFilter === 'string';
-        if (!isFiltered) return;
-        // If filter is LABELLED and item is no longer LABELLED, remove it
-        if (this.statusFilter === 'LABELLED' && newStatus !== 'LABELLED') {
-            const node = this.eventsList && this.eventsList.querySelector(`.event-item[data-event-id="${eventId}"]`);
-            if (node) node.remove();
-            // If grid has fewer items than pageSize, try to backfill by reloading current page
-            const currentCount = this.eventsList ? this.eventsList.querySelectorAll('.event-item').length : 0;
-            if (currentCount < this.pageSize) {
-                // Reload current page to backfill; keep same page number
-                this.loadPage(this.currentPage).catch((e) => console.warn('Backfill failed:', e));
-            }
-        }
+        const ts = evt && evt.timestamp ? String(evt.timestamp) : '';
+        const a = (evt && (evt.audio_url || (evt.data && evt.data.audio_url))) || '';
+        const i = (evt && (evt.image_url || (evt.data && evt.data.image_url))) || '';
+        return `${ts}|${a}|${i}`;
     }
 
     // Pagination: fetch and render a specific page
     async loadPage(pageNumber = 1) {
         const page = Number.isFinite(pageNumber) && pageNumber > 0 ? pageNumber : 1;
-        const limit = Number.isFinite(this.pageSize) && this.pageSize > 0 ? this.pageSize : 4;
-        
-        // Build query parameters
-        const params = new URLSearchParams();
-        params.set('page', page.toString());
-        // Use pageSize to align with backend pagination semantics
-        params.set('pageSize', limit.toString());
-        params.set('_t', Date.now().toString());
-        
-        // Default status filter LABELLED unless explicitly cleared
-        if (this.statusFilter) {
-            params.set('status', this.statusFilter);
-        }
-        
-        // Use paginated endpoint to receive page metadata (totalPages, etc.)
-        const url = `/api/events/page?${params.toString()}`;
+        const limit = Number.isFinite(this.pageSize) && this.pageSize > 0 ? this.pageSize : 10;
+        const url = `/api/events/page?page=${page}&limit=${limit}&_t=${Date.now()}`;
         const resp = await fetch(url, { cache: 'no-store' });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const payload = await resp.json();
         const events = Array.isArray(payload.events) ? payload.events : [];
         this.currentPage = Number(payload.page) || page;
-        // Update totals from API if provided
-        if (Number.isFinite(Number(payload.totalCount))) {
-            this.totalCount = Number(payload.totalCount);
-        }
-        this.totalPages = Number(payload.totalPages) || (Number.isFinite(this.totalCount) && this.pageSize ? Math.max(1, Math.ceil(this.totalCount / this.pageSize)) : (this.totalPages || 1));
+        this.totalPages = Number(payload.totalPages) || 1;
         // Replace list contents with the requested page (render newest first as provided)
         if (this.eventsList) {
             this.eventsList.innerHTML = '';
             if (events.length === 0) {
-                this.eventsList.innerHTML = '<div class="no-events-item"><div class="no-events">No events found</div></div>';
+                this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="4" class="no-events">No events found</td></tr>';
             } else {
                 // Reverse the array since addEventToList() adds to the top
                 for (const evt of events.slice().reverse()) {
                     this.renderEventSilently(evt);
                 }
-                // Ensure the page is capped at pageSize for consistency
-                const items = this.eventsList.querySelectorAll('.event-item');
-                const limit = Number.isFinite(this.pageSize) && this.pageSize > 0 ? this.pageSize : items.length;
-                if (items.length > limit) {
-                    for (let i = items.length - 1; i >= limit; i--) {
-                        items[i].remove();
-                    }
-                }
             }
         }
         this.updatePaginationUI();
-        // Apply current filter on the new page (for search text only, status is handled by backend)
+        // Apply current filter on the new page
         this.applyFilter();
     }
 
@@ -1118,7 +953,7 @@ class SSEAudioNotifier {
                 this.createPageButton(i, currentPage, goTo);
             }
         } else {
-            // Complex pagination with ellipsis
+            // Smart pagination with ellipsis - show first 4 pages, ellipsis, last page
             if (currentPage <= 4) {
                 // Show pages 2-4, then ellipsis, then last page
                 for (let i = 2; i <= 4; i++) {
@@ -1127,7 +962,7 @@ class SSEAudioNotifier {
                 this.createEllipsis();
                 this.createPageButton(totalPages, currentPage, goTo);
             } else if (currentPage >= totalPages - 3) {
-                // Show first page, ellipsis, then last 3 pages
+                // Show first page, ellipsis, then last 4 pages
                 this.createEllipsis();
                 for (let i = totalPages - 3; i <= totalPages; i++) {
                     this.createPageButton(i, currentPage, goTo);
@@ -1167,21 +1002,6 @@ class SSEAudioNotifier {
         ellipsis.setAttribute('aria-hidden', 'true');
         this.pageNumbersContainer.appendChild(ellipsis);
     }
-
-    // Cleanup method to properly close connections
-    destroy() {
-        if (this.reconnectTimeout) {
-            clearTimeout(this.reconnectTimeout);
-            this.reconnectTimeout = null;
-        }
-        
-        if (this.eventSource) {
-            this.eventSource.close();
-            this.eventSource = null;
-        }
-        
-        this.isConnected = false;
-    }
 }
 
 // Initialize the application when the DOM is loaded
@@ -1193,9 +1013,8 @@ document.addEventListener('DOMContentLoaded', () => {
         app.loadPage(1).catch((e) => console.warn('Failed to load initial page:', e));
     }
     
-    
-    // Cleanup on page unload
-    window.addEventListener('beforeunload', () => {
-        app.destroy();
-    });
+    // Add some helpful console messages
+    console.log('SSE Audio Notifier initialized');
+    console.log('Automatically connecting to SSE to start receiving events');
+    console.log('Audio will play automatically when new events arrive');
 });

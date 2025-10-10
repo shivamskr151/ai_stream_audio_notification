@@ -6,24 +6,17 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Quality Assurance</title>
-    <link rel="stylesheet" href="styles.css?v=2.1">
+    <title>Audio Notifications</title>
+    <link rel="stylesheet" href="styles.css?v=2.2">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Quality Assurance</h1>
-            <div class="header-right">
-                <select id="page-size" class="page-size-select" aria-label="Items per page">
-                    <option value="2">Show 2</option>
-                    <option value="4">Show 4</option>
-                    <option value="6">Show 6</option>
-                    <option value="8">Show 8</option>
-                    <option value="12">Show 12</option>
-                    <option value="16">Show 16</option>
-                </select>
+            <h1>Audio Notifications</h1>
+            <div class="header-controls">
+                <input id="events-search" type="search" placeholder="Search events" aria-label="Search events" />
                 <div class="connection-status">
-                    <span id="status-indicator" class="status-disconnected">●</span>
+                    <span id="status-indicator" class="status-disconnected"></span>
                     <span id="status-text">Disconnected</span>
                     <div id="stop-status" class="stop-status hidden">
                         <span id="stop-timer-text">Audio stopped for: </span>
@@ -33,17 +26,25 @@
             </div>
         </header>
 
-        <main class="main-container">
+        <main>
             <div class="events-container">
-                <div class="events-toolbar">
-                    <div class="toolbar-left"></div>
-                    <div class="toolbar-right"></div>
-                </div>
                 
-                <div id="events-grid" class="events-grid">
-                    <div class="no-events-item">
-                        <div class="no-events">No events received yet</div>
-                    </div>
+                <div class="events-table-container">
+                    <table class="events-table">
+                        <thead>
+                            <tr>
+                                <th>DATE & TIME</th>
+                                <th>EVENT CATEGORY</th>
+                                <th>IMAGE / AUDIO</th>
+                                <th>ACTIONS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="events-list">
+                            <tr class="no-events-row">
+                                <td colspan="4" class="no-events">No events received yet</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
                 
                 <div class="pagination" aria-label="Events pagination">
@@ -99,9 +100,14 @@
         </main>
     </div>
 
-    
+    <!-- Audio element for notifications -->
+    <audio id="notification-audio" preload="auto">
+        <source src="notification.mp3" type="audio/mpeg">
+        <source src="notification.wav" type="audio/wav">
+        Your browser does not support the audio element.
+    </audio>
 
-    <script src="/env.js?v=2.1"></script>
-    <script src="app.js?v=2.1"></script>
+    <script src="/env.js?v=2.2"></script>
+    <script src="app.js?v=2.2"></script>
 </body>
 </html>

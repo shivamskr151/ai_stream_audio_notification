@@ -15,37 +15,52 @@ A real-time notification system using Server-Sent Events (SSE) backed by a SQLit
 
 - **SSE stream**: Live event stream on `/events`.
 - **REST API**: CRUD endpoints under `/api/events`, plus a paginated listing.
+- **Webhook Integration**: External system integration via `/api/webhook` endpoint.
 - **SQLite + Prisma**: Typed access layer with relations (e.g., absolute bounding boxes).
 - **Optional Kafka**: Consume from Kafka and forward to DB + SSE; optional producer on updates.
 - **Frontend UI**: Static SPA served from `frontend/public` with configuration from `/env.js`.
+- **Audio Notifications**: Custom audio files with Web Audio API fallback.
 - **Environment-driven config**: All runtime values provided via `.env`.
 
 ## Project Structure
 
 ```text
-ai-notification-system/
+qa-real-time-events/
 ├── backend/
 │   ├── server.js                  # Express server, routes, SSE registration, static serving
+│   ├── config.js                  # Configuration management
+│   ├── ecosystem.config.js        # PM2 configuration
+│   ├── init_sqlite.sh            # Database initialization script
 │   ├── routes/
-│   │   └── events.routes.js       # /api/events routes
+│   │   ├── events.routes.js       # /api/events routes
+│   │   └── webhook.routes.js      # /api/webhook routes
 │   ├── controllers/
-│   │   └── event.controller.js    # Event controller (validation + responses)
+│   │   ├── event.controller.js    # Event controller (validation + responses)
+│   │   └── webhook.controller.js  # Webhook controller for external integrations
 │   ├── services/
 │   │   ├── app.service.js         # Kafka → DB → SSE bridge
 │   │   └── event.service.js       # Prisma-backed event operations
 │   ├── lib/
-│   │   ├── sse/                    # SSE helpers (register route, broadcast)
-│   │   ├── prisma/                 # Prisma client wrapper
-│   │   └── kafka/                  # Kafka client/producer/consumer
+│   │   ├── sse/                   # SSE helpers (register route, broadcast)
+│   │   ├── prisma/                # Prisma client wrapper
+│   │   ├── kafka/                 # Kafka client/producer/consumer
+│   │   └── webhook/               # Webhook utilities (future expansion)
 │   ├── prisma/
-│   │   └── schema.prisma           # Prisma schema for SQLite
+│   │   └── schema.prisma          # Prisma schema for SQLite
+│   ├── postman/
+│   │   └── quality_approved.postman_collection.json # API testing collection
 │   ├── package.json
-│   └── package-lock.json
+│   ├── package-lock.json
+│   ├── dev.db                     # SQLite development database
+│   └── .env                       # Environment configuration
 ├── frontend/
 │   └── public/
-│       ├── index.html              # Main UI
-│       ├── styles.css              # Styles
-│       └── app.js                  # SSE client + UI logic
+│       ├── index.html             # Main UI
+│       ├── styles.css             # Styles
+│       ├── app.js                 # SSE client + UI logic
+│       ├── audio-generator.js     # Web Audio API fallback for notifications
+│       ├── notification.wav       # Audio notification file
+│       └── placeholder.svg        # Placeholder image
 └── README.md
 ```
 
@@ -55,23 +70,33 @@ ai-notification-system/
 
 ```bash
 cd backend && npm install
-cd ../frontend && npm install
 ```
+
+**Note**: The frontend is a static application served by the backend, so no separate frontend installation is required.
 
 ### 2) Configure Environment (backend/.env)
 
-Create `backend/.env` with at least:
+Create `backend/.env` with the following configuration:
 
 ```env
-PORT=3000
-DATABASE_URL="file:../prod.db"          # or file:./prod.db (relative to backend)
+# Database Configuration
+DATABASE_URL="file:./dev.db"
 
-# Frontend runtime config exposed at /env.js
-SSE_URL=/events
-MAX_EVENTS=10
-MAX_COMPACT_EVENTS=20
+# Server Configuration
+PORT=4021
+
+# SSE Configuration
+SSE_URL="http://localhost:4021/events"
+MAX_EVENTS=1000
+MAX_COMPACT_EVENTS=100
 SSE_RECONNECT_MS=3000
 DEFAULT_VOLUME=0.5
+
+# Webhook Configuration
+WEBHOOK_URL="https://webhook.site/REPLACE-WITH-YOUR-UNIQUE-ID"
+WEBHOOK_TIMEOUT=10000
+WEBHOOK_RETRY_ATTEMPTS=3
+WEBHOOK_RETRY_DELAY=1000
 
 # Optional Kafka (leave unset to disable)
 # KAFKA_BROKER=localhost:9092
@@ -90,11 +115,12 @@ npm run dev   # development with nodemon
 
 ### 4) Open the Application
 
-Navigate to `http://localhost:3000`.
+Navigate to `http://localhost:4021` (or the port specified in your `.env` file).
 
 ## Backend Overview
 
 ### Server (`backend/server.js`)
+
 - Express app with CORS and JSON parsing
 - Health endpoint: `GET /health`
 - REST routes mounted at `GET/POST/PUT/DELETE /api/events`
@@ -103,6 +129,7 @@ Navigate to `http://localhost:3000`.
 - Frontend runtime config at `GET /env.js` generated from `.env`
 
 ### Events API (`/api/events`)
+
 - `GET /api/events` — List events (supports `page`, `pageSize`, `limit`, `severity`, `sensor_id`, `status`)
 - `GET /api/events/page` — Paginated list with `{ events, page, totalPages, totalCount, pageSize }`
 - `GET /api/events/:id` — Get event by id
@@ -110,7 +137,15 @@ Navigate to `http://localhost:3000`.
 - `PUT /api/events/:id` — Update event (also optionally produces Kafka message if configured)
 - `DELETE /api/events/:id` — Delete event
 
+### Webhook API (`/api/webhook`)
+
+- `POST /api/webhook` — Receive webhook data from external systems
+  - Accepts JSON payload with event data
+  - Automatically saves to database and broadcasts via SSE
+  - Returns success confirmation with saved event details
+
 ### Services and Libraries
+
 - `services/event.service.js` — Event CRUD via Prisma, bbox serialization helpers
 - `services/app.service.js` — Kafka consumer that saves events and broadcasts over SSE
 - `lib/prisma` — Prisma client initialization/wrapper
@@ -127,20 +162,27 @@ Navigate to `http://localhost:3000`.
 
 ```json
 {
-  "id": 123,
-  "eventType": "KafkaEvent",
+  "id": "uuid-string",
+  "audio_url": "https://example.com/notification.wav",
+  "image_url": "https://example.com/event-image.jpg",
   "timestamp": "2025-01-15T10:30:00.000Z",
-  "severity": "high",
-  "sensor_id": "S-001",
-  "status": "active",
-  "data": {
-    "message": "Example event payload"
-  },
-  "absolute_bbox": [
-    { "xywh": [100, 120, 50, 40], "confidence": 0.92, "subcategory": "person" }
-  ]
+  "event_type": "PPE",
+  "created_at": "2025-01-15T10:30:00.000Z",
+  "updated_at": "2025-01-15T10:30:00.000Z"
 }
 ```
+
+### Database Schema
+
+The application uses SQLite with Prisma ORM. The main `Event` model includes:
+
+- `id`: String (UUID) - Primary key
+- `audio_url`: String - URL to audio notification file
+- `image_url`: String - URL to event image/thumbnail
+- `timestamp`: DateTime - When the event occurred
+- `event_type`: String - Type of event (e.g., "PPE", "fire_and_smoke")
+- `created_at`: DateTime - Record creation timestamp
+- `updated_at`: DateTime - Last update timestamp
 
 **Connection event** (sent on SSE connect):
 
@@ -199,6 +241,8 @@ Place your audio files in the `frontend/public/` directory:
 - `notification.mp3` (recommended)
 - `notification.wav` (fallback)
 
+**Audio Fallback**: If audio files are not available, the application includes a Web Audio API fallback (`audio-generator.js`) that generates a pleasant two-tone notification sound programmatically.
+
 ### Modifying Event Frequency
 
 Set `SSE_INTERVAL_MS` in `.env` (e.g., `SSE_INTERVAL_MS=10000` for 10 seconds). No code changes required. Default is 60 seconds.
@@ -212,18 +256,40 @@ The server generates events by reading from the SQLite database. To customize ev
 3. **Event Types**: Configure `EVENT_TYPES` in `.env` to cycle through different event types
 4. **Custom URLs**: Modify the database directly or implement custom event generation logic
 
+### Webhook Integration
+
+The application supports webhook integration for external systems:
+
+1. **Endpoint**: `POST /api/webhook`
+2. **Payload**: JSON data with event information
+3. **Processing**: Automatically saves to database and broadcasts via SSE
+4. **Response**: Returns success confirmation with saved event details
+
+Example webhook payload:
+
+```json
+{
+  "audio_url": "https://example.com/notification.wav",
+  "image_url": "https://example.com/event-image.jpg",
+  "timestamp": "2025-01-15T10:30:00.000Z",
+  "event_type": "PPE"
+}
+```
+
 ## Endpoints
 
 - `GET /` — Frontend
 - `GET /events` — SSE stream
 - `GET /env.js` — Frontend runtime config
-- `GET /health` — Health
+- `GET /health` — Health check
+- `GET /debug/db` — Database debug information
 - `GET /api/events` — List events
 - `GET /api/events/page` — Paginated listing
 - `GET /api/events/:id` — Get by ID
-- `POST /api/events` — Create
-- `PUT /api/events/:id` — Update
-- `DELETE /api/events/:id` — Delete
+- `POST /api/events` — Create event
+- `PUT /api/events/:id` — Update event
+- `DELETE /api/events/:id` — Delete event
+- `POST /api/webhook` — Webhook endpoint for external integrations
 
 ## Browser Compatibility
 
@@ -238,6 +304,16 @@ Run the backend in watch mode using `npm run dev` (nodemon). The frontend is sta
 1. Open multiple browser tabs to test concurrent SSE clients
 2. Check browser console and network tab for SSE
 3. Hit `/health` to verify server status
+
+### API Testing with Postman
+
+A Postman collection is included in `backend/postman/quality_approved.postman_collection.json` for testing all API endpoints:
+
+1. Import the collection into Postman
+2. Update the base URL to match your server (default: `http://localhost:4021`)
+3. Test all CRUD operations for events
+4. Test webhook integration
+5. Verify SSE stream connectivity
 
 ## Troubleshooting
 
@@ -258,7 +334,7 @@ Run the backend in watch mode using `npm run dev` (nodemon). The frontend is sta
 4. Try refreshing the page and reconnecting
 5. Check `/health` endpoint to see active connections
 6. Verify `FRONTEND_SSE_URL` matches server endpoint
-7. Verify server status at `http://localhost:3000/health` (or `curl -s http://localhost:3000/health`)
+7. Verify server status at `http://localhost:4021/health` (or `curl -s http://localhost:4021/health`)
 
 ### Database Issues
 
@@ -306,13 +382,13 @@ Consider the following for production:
 
 ```bash
 # Create backup before deployment (adjust path if your DATABASE_URL uses a different file)
-cp backend/prod.db backend/prod_backup_$(date +%Y%m%d_%H%M%S).db
+cp backend/dev.db backend/dev_backup_$(date +%Y%m%d_%H%M%S).db
 
 # Check database tables via debug endpoint
-curl -s http://localhost:3000/debug/db | jq .
+curl -s http://localhost:4021/debug/db | jq .
 
 # Reset database (WARNING: deletes data)
-rm backend/prod.db
+rm backend/dev.db
 # Then restart the server; Prisma will recreate tables on next run
 ```
 

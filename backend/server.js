@@ -1,11 +1,13 @@
+// backend/server.js
+
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
-
 const eventsRouter = require('./routes/events.routes');
 const { registerSseRoute } = require('./lib/sse');
-const { AppService } = require('./services/app.service');
+const webhookRouter = require('./routes/webhook.routes');
+
 
 const app = express();
 
@@ -25,6 +27,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 // API routes
 app.use('/api/events', eventsRouter);
+app.use('/api/webhook', webhookRouter);
 
 // Debug route to inspect DB tables
 try {
@@ -71,11 +74,12 @@ const server = app.listen(PORT, () => {
 });
 
 // Start background Kafka -> SSE bridge
-const service = new AppService();
-service.start().catch(err => {
-  console.error('Failed to start AppService:', err);
-  process.exitCode = 1;
-});
+// const service = new AppService();
+// service.start().catch(err => {
+//   console.error('Failed to start AppService:', err);
+//   process.exitCode = 1;
+// });
+
 
 process.on('SIGINT', async () => {
   try { await service.stop(); } catch (_) {}
