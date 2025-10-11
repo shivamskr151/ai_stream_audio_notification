@@ -405,6 +405,14 @@ class SSEAudioNotifier {
         // Allow new events to be processed again
         this.isAudioPlaying = false;
 
+        // Reset all audio button states
+        const audioButtons = document.querySelectorAll('.video-btn[data-playing="true"]');
+        audioButtons.forEach(btn => {
+            btn.setAttribute('data-playing', 'false');
+            btn.innerHTML = '🎵 Audio';
+            btn.title = 'Start audio';
+        });
+
 		// Allow future sequences after a brief delay
 		setTimeout(() => {
 			this.isStopping = false;
@@ -533,9 +541,18 @@ class SSEAudioNotifier {
             if (latestEventRow) {
                 const startBtn = latestEventRow.querySelector('.start-btn');
                 const stopBtn = latestEventRow.querySelector('.stop-btn');
+                const audioBtn = latestEventRow.querySelector('.video-btn');
+                
                 if (startBtn && stopBtn) {
                     startBtn.style.display = 'none';
                     stopBtn.style.display = 'flex';
+                }
+                
+                // Update audio button state to show it's playing
+                if (audioBtn) {
+                    audioBtn.setAttribute('data-playing', 'true');
+                    audioBtn.innerHTML = '⏸ Audio';
+                    audioBtn.title = 'Stop audio';
                 }
             }
         }, 100);
@@ -662,19 +679,37 @@ class SSEAudioNotifier {
             });
         }
 
-        // Audio button handler
+        // Audio button handler - now toggles between play and stop
         const audioBtn = eventRow.querySelector('.video-btn');
         if (audioBtn) {
+            // Add data attribute to track state
+            audioBtn.setAttribute('data-playing', 'false');
+            
             audioBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                this.isStopping = false;
-                this.pendingTimeouts.forEach(t => clearTimeout(t));
-                this.pendingTimeouts = [];
-                this.isAudioPlaying = true;
-                // Use the specific audio_url from this event
-                const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
-                this.playNotificationSoundWithUrl(audioUrl);
+                
+                const isCurrentlyPlaying = audioBtn.getAttribute('data-playing') === 'true';
+                
+                if (isCurrentlyPlaying) {
+                    // Stop audio
+                    this.stopAudioImmediate();
+                    audioBtn.setAttribute('data-playing', 'false');
+                    audioBtn.innerHTML = '🎵 Audio';
+                    audioBtn.title = 'Start audio';
+                } else {
+                    // Start audio
+                    this.isStopping = false;
+                    this.pendingTimeouts.forEach(t => clearTimeout(t));
+                    this.pendingTimeouts = [];
+                    this.isAudioPlaying = true;
+                    // Use the specific audio_url from this event
+                    const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
+                    this.playNotificationSoundWithUrl(audioUrl);
+                    audioBtn.setAttribute('data-playing', 'true');
+                    audioBtn.innerHTML = '⏸ Audio';
+                    audioBtn.title = 'Stop audio';
+                }
             });
         }
 
