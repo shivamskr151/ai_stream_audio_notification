@@ -46,6 +46,9 @@ try {
 // SSE endpoint
 registerSseRoute(app);
 
+// Serve backend public files (including HLS streams)
+app.use('/public', express.static(path.join(__dirname, 'public')));
+
 // Serve frontend build from frontend/public
 const publicDir = path.join(__dirname, '..', 'frontend', 'public');
 app.use(express.static(publicDir));
@@ -69,7 +72,7 @@ app.get('/env.js', (req, res) => {
 
 // SPA fallback to index.html
 app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/events')) return next();
+  if (req.path.startsWith('/api') || req.path.startsWith('/events') || req.path.startsWith('/public')) return next();
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 

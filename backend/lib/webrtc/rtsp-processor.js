@@ -30,8 +30,7 @@ class RTSPProcessor extends EventEmitter {
         const isRtsp = this.rtspUrl.startsWith('rtsp://');
         
         if (isRtsp) {
-            console.log('RTSP URL detected, but RTSP protocol not supported in this FFmpeg build');
-            console.log('Using fallback to test video generation...');
+            console.log('RTSP URL detected, attempting to connect to live stream...');
             this.startWebRTCStream();
             return;
         }
@@ -88,12 +87,9 @@ class RTSPProcessor extends EventEmitter {
         let inputOptions = [];
         
         if (isRtsp) {
-            // Check if RTSP is supported
-            console.log('RTSP URL detected, but RTSP protocol not supported in this FFmpeg build');
-            console.log('Falling back to test video generation...');
-            
-            // Generate a test pattern instead of trying RTSP
-            this.generateTestPattern(outputPath);
+            // Try to connect to RTSP stream first
+            console.log('Attempting to connect to RTSP stream...');
+            this.connectToRTSPStream(outputPath);
             return;
         } else if (isHttp) {
             inputOptions = ['-fflags', '+genpts', '-avoid_negative_ts', 'make_zero', '-re', '-stream_loop', '-1'];
@@ -142,8 +138,15 @@ class RTSPProcessor extends EventEmitter {
     }
 
     generateTestPattern(outputPath) {
-        // Use local test video file for RTSP fallback
-        console.log('Using local test video for streaming...');
+        // No fallback - only live RTSP stream
+        console.log('No fallback available. RTSP connection required for streaming.');
+        this.emit('stream-error', new Error('RTSP connection required for live streaming'));
+    }
+
+    // Removed: createStaticHLSFiles - only live RTSP streaming supported
+
+    connectToRTSPStream(outputPath) {
+        console.log('Connecting to live RTSP stream:', this.rtspUrl);
         
         // Ensure output directory exists
         if (!fs.existsSync(outputPath)) {
@@ -151,12 +154,14 @@ class RTSPProcessor extends EventEmitter {
             console.log('Created stream directory:', outputPath);
         }
         
-        // Use the local test video file
-        const testVideoPath = path.join(__dirname, '../../test_video.mp4');
-        
-        this.ffmpegProcess = ffmpeg(testVideoPath)
-            .inputOptions(['-stream_loop', '-1']) // Loop the video indefinitely
-            .videoCodec('libx264')
+        this.ffmpegProcess = ffmpeg(this.rtspUrl)
+            .inputOptions([
+                '-rtsp_transport', 'tcp',  // Use TCP for better reliability
+                '-timeout', '5000000',     // 5 second timeout
+                '-analyzeduration', '1000000',  // Analyze stream for 1 second
+                '-probesize', '1000000'         // Probe size for better detection
+            ])
+            .videoCodec('libx264')  // Convert HEVC to H.264 for HLS compatibility
             .outputOptions([
                 '-preset', 'ultrafast',
                 '-tune', 'zerolatency',
@@ -178,22 +183,27 @@ class RTSPProcessor extends EventEmitter {
             ])
             .output(path.join(outputPath, 'stream.m3u8'))
             .on('start', (commandLine) => {
-                console.log('Test video FFmpeg process started:', commandLine);
+                console.log('Live RTSP FFmpeg process started:', commandLine);
                 this.isStreaming = true;
                 this.emit('stream-started');
             })
             .on('error', (err) => {
-                console.error('Test video FFmpeg error:', err);
+                console.error('Live RTSP FFmpeg error:', err);
+                console.log('RTSP connection failed. Please check camera connection and credentials.');
                 this.isStreaming = false;
                 this.emit('stream-error', err);
             })
             .on('end', () => {
-                console.log('Test video FFmpeg process ended');
+                console.log('Live RTSP FFmpeg process ended');
                 this.isStreaming = false;
                 this.emit('stream-ended');
             })
             .run();
     }
+
+    // Removed: createHLSFromVideo - only live RTSP streaming supported
+
+    // Removed: createTSegment - only live RTSP streaming supported
 
     async stopStream() {
         if (!this.isStreaming) {
