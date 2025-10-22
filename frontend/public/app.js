@@ -15,13 +15,18 @@ class SSEAudioNotifier {
         this.countdownTimer = null; // Timer for countdown display
         this.audioContext = null; // Web Audio API context
         this.audioPermissionGranted = false; // Track audio permission status
+        this.audioDurationTimer = null; // Timer for duration-based audio stopping
+        this.audioSettings = null; // Store audio control settings
         
         this.initializeElements();
         this.bindEvents();
         this.setupAudio();
         this.initializeAudioPermission(); // Initialize audio permission handling
+        // Show/hide video streaming section based on configuration
+        this.initializeVideoStreaming();
         // Preload recent events from SQLite without playing audio
         this.loadInitialEvents();
+        this.loadInitialRecentEvents(); // Load initial recent events
         this.connect(); // Automatically connect on page load
     }
 
@@ -32,6 +37,9 @@ class SSEAudioNotifier {
         this.stopStatus = document.getElementById('stop-status');
         this.stopCountdown = document.getElementById('stop-countdown');
         this.eventsList = document.getElementById('events-list');
+        
+        // WebRTC video streaming section
+        this.videoStreamingSection = document.getElementById('video-streaming-section');
         // Stats elements are optional; guard for absence
         this.totalEventsSpan = document.getElementById('total-events') || null;
         this.lastEventTimeSpan = document.getElementById('last-event-time') || null;
@@ -60,6 +68,17 @@ class SSEAudioNotifier {
         this.pagePrevBtn = document.getElementById('page-prev');
         this.pageNextBtn = document.getElementById('page-next');
         this.pageNumbersContainer = document.getElementById('page-numbers');
+        
+        // Audio Control elements
+        this.audioDurationMinutes = document.getElementById('audio-duration-minutes');
+        this.audioDurationSeconds = document.getElementById('audio-duration-seconds');
+        this.audioStopCondition = document.getElementById('audio-stop-condition');
+        this.applyAudioSettingsBtn = document.getElementById('apply-audio-settings');
+        this.stopAudioNowBtn = document.getElementById('stop-audio-now');
+        this.audioControlStatus = document.getElementById('audio-control-status');
+        
+        // Recent Events elements
+        this.recentEventsList = document.getElementById('recent-events-list');
         // Pagination state
         this.currentPage = 1;
         this.totalPages = 1;
@@ -101,6 +120,28 @@ class SSEAudioNotifier {
             this.updatePaginationForNewEvent();
         } catch (e) {
             console.warn('Failed to preload events:', e);
+        }
+    }
+
+    async loadInitialRecentEvents() {
+        try {
+            // Load only the single most recent event for the recent events panel
+            const resp = await fetch(`/api/events?limit=1`, { cache: 'no-store' });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const payload = await resp.json();
+            const events = Array.isArray(payload.events) ? payload.events : [];
+            
+            // Clear the recent events list first
+            if (this.recentEventsList) {
+                this.recentEventsList.innerHTML = '';
+            }
+            
+            // Add only the most recent event if it exists
+            if (events.length > 0) {
+                this.addToRecentEvents(events[0]);
+            }
+        } catch (e) {
+            console.warn('Failed to preload recent events:', e);
         }
     }
 
@@ -157,6 +198,14 @@ class SSEAudioNotifier {
         const goTo = (n) => this.loadPage(n).catch((e) => console.warn('Pagination load failed:', e));
         if (this.pagePrevBtn) this.pagePrevBtn.addEventListener('click', () => goTo(Math.max(1, this.currentPage - 1)));
         if (this.pageNextBtn) this.pageNextBtn.addEventListener('click', () => goTo(Math.min(this.totalPages, this.currentPage + 1)));
+        
+        // Audio Control event bindings
+        if (this.applyAudioSettingsBtn) {
+            this.applyAudioSettingsBtn.addEventListener('click', () => this.applyAudioSettings());
+        }
+        if (this.stopAudioNowBtn) {
+            this.stopAudioNowBtn.addEventListener('click', () => this.stopAudioNow());
+        }
     }
 
     setupAudio() {
@@ -252,6 +301,14 @@ class SSEAudioNotifier {
         // Keep for backward compatibility but functionality moved
     }
 
+    initializeVideoStreaming() {
+        // Always show video streaming section since it now contains Audio Control and Recent Events
+        if (this.videoStreamingSection) {
+            this.videoStreamingSection.style.display = 'block';
+            console.log('Video streaming section enabled (contains Audio Control and Recent Events)');
+        }
+    }
+
     playFallbackAudio(volume) {
         if (!this.audioContext || !this.gainNode) return;
 
@@ -324,7 +381,32 @@ class SSEAudioNotifier {
                 this.isAudioPlaying = false; // Reset flag when stopping
                 return;
             }
-            // Loop continuously instead of playing fixed number of times
+            
+            // Check if we should stop after this event ends
+            if (this.audioSettings && this.audioSettings.stopCondition === 'event-end') {
+                console.log('Event ended, stopping audio as configured');
+                this.stopAudioImmediate();
+                this.showAudioStatus('Audio stopped - event ended', 'warning');
+                return;
+            }
+            
+            // Check if duration-based stopping is active and should continue looping
+            if (this.audioSettings && this.audioSettings.stopCondition === 'duration') {
+                // For duration-based stopping, we let the timer handle the stopping
+                // Continue looping until the timer expires
+                const t = setTimeout(() => this.playNotificationSequence(volume), 150);
+                this.pendingTimeouts.push(t);
+                return;
+            }
+            
+            // For manual stop condition, continue looping indefinitely
+            if (this.audioSettings && this.audioSettings.stopCondition === 'manual') {
+                const t = setTimeout(() => this.playNotificationSequence(volume), 150);
+                this.pendingTimeouts.push(t);
+                return;
+            }
+            
+            // Default behavior: Loop continuously
             const t = setTimeout(() => this.playNotificationSequence(volume), 150);
             this.pendingTimeouts.push(t);
         };
@@ -339,6 +421,8 @@ class SSEAudioNotifier {
                     .then(() => {
                         this.audioCount++;
                         this.updateStats();
+                        // Start duration timer if configured and not already set
+                        this.startDurationTimerIfNeeded();
                     })
                     .catch(error => {
                         console.warn('Audio file playback failed:', error);
@@ -353,6 +437,8 @@ class SSEAudioNotifier {
         } else {
             // Use fallback audio
             this.playFallbackAndMaybeRepeat(volume);
+            // Start duration timer if configured and not already set
+            this.startDurationTimerIfNeeded();
         }
     }
 
@@ -368,7 +454,30 @@ class SSEAudioNotifier {
         }
         
         this.playFallbackAudio(volume);
-        // Loop continuously instead of playing fixed number of times
+        
+        // Check if we should stop after this event ends
+        if (this.audioSettings && this.audioSettings.stopCondition === 'event-end') {
+            console.log('Fallback audio event ended, stopping audio as configured');
+            this.stopAudioImmediate();
+            this.showAudioStatus('Audio stopped - event ended', 'warning');
+            return;
+        }
+        
+        // For duration-based stopping, continue looping until timer expires
+        if (this.audioSettings && this.audioSettings.stopCondition === 'duration') {
+            const t = setTimeout(() => this.playNotificationSequence(volume), 400);
+            this.pendingTimeouts.push(t);
+            return;
+        }
+        
+        // For manual stop condition, continue looping indefinitely
+        if (this.audioSettings && this.audioSettings.stopCondition === 'manual') {
+            const t = setTimeout(() => this.playNotificationSequence(volume), 400);
+            this.pendingTimeouts.push(t);
+            return;
+        }
+        
+        // Default behavior: Loop continuously
         const t = setTimeout(() => this.playNotificationSequence(volume), 400);
         this.pendingTimeouts.push(t);
     }
@@ -383,6 +492,12 @@ class SSEAudioNotifier {
         this.isStopping = true;
         this.pendingTimeouts.forEach(t => clearTimeout(t));
         this.pendingTimeouts = [];
+
+        // Clear audio duration timer
+        if (this.audioDurationTimer) {
+            clearTimeout(this.audioDurationTimer);
+            this.audioDurationTimer = null;
+        }
 
         // Stop audio file
         if (this.notificationAudio) {
@@ -412,6 +527,7 @@ class SSEAudioNotifier {
             btn.innerHTML = '🎵 Audio';
             btn.title = 'Start audio';
         });
+
 
 		// Allow future sequences after a brief delay
 		setTimeout(() => {
@@ -515,6 +631,9 @@ class SSEAudioNotifier {
         }
         this.addEventToCompactList(data, true);
         
+        // Add to recent events list
+        this.addToRecentEvents(data);
+        
         // If event includes an audio_url, prefer playing it; otherwise use default
         const effectiveAudioUrl = (data && (data.audio_url || (data.data && data.data.audio_url))) || '/notification.wav';
         if (effectiveAudioUrl) {
@@ -533,20 +652,18 @@ class SSEAudioNotifier {
         this.pendingTimeouts.forEach(t => clearTimeout(t));
         this.pendingTimeouts = [];
         this.isAudioPlaying = true; // Mark audio as playing
+        
+        // Apply audio settings BEFORE starting audio
+        this.applySettingsToCurrentAudio();
+        
+        // Start audio playback
         this.playNotificationSound();
         
         // Update button states for the newly added event
         setTimeout(() => {
             const latestEventRow = this.eventsList.querySelector('.event-row');
             if (latestEventRow) {
-                const startBtn = latestEventRow.querySelector('.start-btn');
-                const stopBtn = latestEventRow.querySelector('.stop-btn');
                 const audioBtn = latestEventRow.querySelector('.video-btn');
-                
-                if (startBtn && stopBtn) {
-                    startBtn.style.display = 'none';
-                    stopBtn.style.display = 'flex';
-                }
                 
                 // Update audio button state to show it's playing
                 if (audioBtn) {
@@ -638,16 +755,6 @@ class SSEAudioNotifier {
                     ` : ''}
                 </div>
             </td>
-            <td class="actions-column">
-                <div class="action-buttons">
-                    <button class="action-btn start-btn" title="Start audio" style="display: none;">
-                        ▶ Start
-                    </button>
-                    <button class="action-btn stop-btn" title="Stop audio">
-                        ■ Stop
-                    </button>
-                </div>
-            </td>
         `;
 
         // Add to the top of the table
@@ -705,6 +812,8 @@ class SSEAudioNotifier {
                     this.isAudioPlaying = true;
                     // Use the specific audio_url from this event
                     const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
+                    // Apply audio settings BEFORE starting audio
+                    this.applySettingsToCurrentAudio();
                     this.playNotificationSoundWithUrl(audioUrl);
                     audioBtn.setAttribute('data-playing', 'true');
                     audioBtn.innerHTML = '⏸ Audio';
@@ -713,39 +822,6 @@ class SSEAudioNotifier {
             });
         }
 
-        // Start button handler
-        const startBtn = eventRow.querySelector('.start-btn');
-        if (startBtn) {
-            startBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.isStopping = false;
-                this.pendingTimeouts.forEach(t => clearTimeout(t));
-                this.pendingTimeouts = [];
-                this.isAudioPlaying = true;
-                // Use the specific audio_url from this event
-                const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
-                this.playNotificationSoundWithUrl(audioUrl);
-                // Hide start button and show stop button
-                startBtn.style.display = 'none';
-                const stopBtn = eventRow.querySelector('.stop-btn');
-                if (stopBtn) stopBtn.style.display = 'flex';
-            });
-        }
-
-        // Stop button handler
-        const stopBtn = eventRow.querySelector('.stop-btn');
-        if (stopBtn) {
-            stopBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.stopAudio();
-                // Hide stop button and show start button
-                stopBtn.style.display = 'none';
-                const startBtn = eventRow.querySelector('.start-btn');
-                if (startBtn) startBtn.style.display = 'flex';
-            });
-        }
     }
 
     // Server-side filtering: reload current page with search query
@@ -801,7 +877,7 @@ class SSEAudioNotifier {
     // Clear events list safely
     clearEvents() {
         if (!this.eventsList) return;
-        this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="4" class="no-events">No events received yet</td></tr>';
+        this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="3" class="no-events">No events received yet</td></tr>';
     }
 
     // Compact density toggle removed
@@ -1032,6 +1108,8 @@ class SSEAudioNotifier {
                 this.isAudioPlaying = true; // Mark audio as playing
                 // Use the specific audio_url from this event
                 const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
+                // Apply audio settings BEFORE starting audio
+                this.applySettingsToCurrentAudio();
                 this.playNotificationSoundWithUrl(audioUrl);
                 // Hide start button and show stop button
                 startBtn2.style.display = 'none';
@@ -1154,7 +1232,7 @@ class SSEAudioNotifier {
                 const noEventsMessage = this.currentSearchQuery 
                     ? `No events found matching "${this.currentSearchQuery}"`
                     : 'No events found';
-                this.eventsList.innerHTML = `<tr class="no-events-row"><td colspan="4" class="no-events">${noEventsMessage}</td></tr>`;
+                this.eventsList.innerHTML = `<tr class="no-events-row"><td colspan="3" class="no-events">${noEventsMessage}</td></tr>`;
             } else {
                 // Reverse the array since addEventToList() adds to the top
                 for (const evt of events.slice().reverse()) {
@@ -1173,7 +1251,7 @@ class SSEAudioNotifier {
             this.eventsList.innerHTML = '';
             
             if (this.realTimeTotalEvents === 0) {
-                this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="4" class="no-events">No events received yet</td></tr>';
+                this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="3" class="no-events">No events received yet</td></tr>';
             } else {
                 // Calculate the slice of events for this page
                 const startIndex = (pageNumber - 1) * this.pageSize;
@@ -1181,7 +1259,7 @@ class SSEAudioNotifier {
                 const pageEvents = this.realTimeEvents.slice(startIndex, endIndex);
                 
                 if (pageEvents.length === 0) {
-                    this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="4" class="no-events">No events on this page</td></tr>';
+                    this.eventsList.innerHTML = '<tr class="no-events-row"><td colspan="3" class="no-events">No events on this page</td></tr>';
                 } else {
                     // Render events for this page
                     pageEvents.forEach(eventData => {
@@ -1279,6 +1357,224 @@ class SSEAudioNotifier {
         ellipsis.setAttribute('aria-hidden', 'true');
         this.pageNumbersContainer.appendChild(ellipsis);
     }
+
+    // Audio Control Methods
+    applyAudioSettings() {
+        const minutes = parseInt(this.audioDurationMinutes.value) || 0;
+        const seconds = parseInt(this.audioDurationSeconds.value) || 0;
+        const stopCondition = this.audioStopCondition.value;
+        
+        const totalSeconds = minutes * 60 + seconds;
+        
+        if (totalSeconds <= 0 && stopCondition === 'duration') {
+            alert('Please enter a valid duration (at least 1 second) for duration-based stopping');
+            return;
+        }
+        
+        // Store the settings for use in audio playback
+        this.audioSettings = {
+            duration: totalSeconds,
+            stopCondition: stopCondition,
+            minutes: minutes,
+            seconds: seconds
+        };
+        
+        console.log('Audio settings applied:', this.audioSettings);
+        
+        
+        // Apply the settings to current audio if playing
+        if (this.isAudioPlaying) {
+            this.applySettingsToCurrentAudio();
+        } else {
+            // If audio is not playing, just show the settings feedback
+            this.showAudioSettingsFeedback();
+        }
+    }
+    
+    applySettingsToCurrentAudio() {
+        if (!this.audioSettings) return;
+        
+        const { duration, stopCondition } = this.audioSettings;
+        
+        // Clear any existing duration timer
+        if (this.audioDurationTimer) {
+            clearTimeout(this.audioDurationTimer);
+            this.audioDurationTimer = null;
+        }
+        
+        // Apply duration-based stopping if configured
+        if (stopCondition === 'duration' && duration > 0) {
+            // Only set timer if audio is currently playing
+            if (this.isAudioPlaying && !this.isStopping) {
+                this.startDurationTimer(duration);
+            } else {
+                console.log('Duration timer will be set when audio starts');
+                this.showAudioStatus(`Duration set: ${duration} seconds`, 'success');
+            }
+        }
+        
+        // For event-end condition, we'll handle this in the event handling logic
+        if (stopCondition === 'event-end') {
+            console.log('Audio will stop when current event ends');
+            this.showAudioStatus('Audio will stop when event ends', 'success');
+        }
+        
+        // For manual stop condition
+        if (stopCondition === 'manual') {
+            this.showAudioStatus('Audio will continue until manually stopped', 'success');
+        }
+    }
+    
+    startDurationTimerIfNeeded() {
+        if (!this.audioSettings || this.audioSettings.stopCondition !== 'duration') return;
+        if (this.audioDurationTimer) return; // Timer already set
+        
+        const { duration } = this.audioSettings;
+        if (duration > 0) {
+            this.startDurationTimer(duration);
+        }
+    }
+    
+    startDurationTimer(duration) {
+        this.audioDurationTimer = setTimeout(() => {
+            console.log('Audio duration reached, stopping audio');
+            this.stopAudioImmediate();
+            this.audioDurationTimer = null;
+            this.showAudioStatus('Audio stopped after duration reached', 'warning');
+        }, duration * 1000);
+        
+        console.log(`Audio will stop automatically after ${duration} seconds`);
+        this.showAudioStatus(`Audio will stop in ${duration} seconds`, 'success');
+    }
+    
+    showAudioSettingsFeedback() {
+        const btn = this.applyAudioSettingsBtn;
+        const originalText = btn.textContent;
+        btn.textContent = 'Settings Applied!';
+        btn.style.background = '#27ae60';
+        
+        // Show status message
+        this.showAudioStatus('Settings applied successfully!', 'success');
+        
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.background = '';
+        }, 2000);
+    }
+    
+    showAudioStatus(message, type = 'success') {
+        if (!this.audioControlStatus) return;
+        
+        this.audioControlStatus.textContent = message;
+        this.audioControlStatus.className = `audio-control-status ${type} show`;
+        
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+            this.audioControlStatus.classList.remove('show');
+        }, 3000);
+    }
+    
+    
+    stopAudioNow() {
+        this.stopAudioImmediate();
+        console.log('Audio stopped immediately by user');
+        
+        // Show feedback to user
+        this.showStopNowFeedback();
+    }
+    
+    showStopNowFeedback() {
+        const btn = this.stopAudioNowBtn;
+        const originalText = btn.textContent;
+        btn.textContent = 'Stopped!';
+        btn.style.background = '#e74c3c';
+        
+        // Show status message
+        this.showAudioStatus('Audio stopped immediately', 'warning');
+        
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.background = '';
+        }, 1500);
+    }
+    
+    // Recent Events Methods
+    addToRecentEvents(data) {
+        if (!this.recentEventsList) return;
+        
+        // Remove "no recent events" message if it exists
+        const noEventsMsg = this.recentEventsList.querySelector('.no-recent-events');
+        if (noEventsMsg) {
+            noEventsMsg.remove();
+        }
+        
+        const eventItem = document.createElement('div');
+        eventItem.className = 'recent-event-item';
+        
+        const timestamp = new Date();
+        const dateStr = timestamp.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric' 
+        });
+        const timeStr = timestamp.toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true 
+        });
+        
+        // Extract event type - use the same logic as the main events table
+        let eventType = data.event_type || 'Media Event';
+        if (!data.event_type) {
+            const audioUrl = (data.audio_url || (data.data && data.data.audio_url));
+            const imageUrl = (data.image_url || (data.data && data.data.image_url));
+            if (audioUrl && imageUrl) {
+                eventType = 'Audio & Image Event';
+            } else if (audioUrl) {
+                eventType = 'Audio Event';
+            } else if (imageUrl) {
+                eventType = 'Image Event';
+            }
+        }
+        
+        // Create media buttons similar to the main table
+        const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
+        const imageUrl = (data.image_url || (data.data && data.data.image_url) || '/placeholder.svg');
+        
+        eventItem.innerHTML = `
+            <div class="recent-event-header">
+                <div class="recent-event-datetime">
+                    <div class="recent-event-date">${dateStr}</div>
+                    <div class="recent-event-time">${timeStr}</div>
+                </div>
+                <div class="recent-event-type">${eventType}</div>
+            </div>
+            <div class="recent-event-media">
+                ${imageUrl ? `
+                    <button class="btn btn-primary btn-small recent-image-btn">
+                        📷 Image
+                    </button>
+                ` : ''}
+            </div>
+        `;
+        
+        // Add event listeners for the buttons
+        const imageBtn = eventItem.querySelector('.recent-image-btn');
+        
+        if (imageBtn) {
+            imageBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.showModal(imageUrl);
+            });
+        }
+        
+        // Clear all existing events and show only the latest one
+        this.recentEventsList.innerHTML = '';
+        this.recentEventsList.appendChild(eventItem);
+    }
+    
 }
 
 // Initialize the application when the DOM is loaded

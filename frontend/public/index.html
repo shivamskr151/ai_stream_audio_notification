@@ -27,7 +27,76 @@
         </header>
 
         <main>
-            <div class="events-container">
+            <div class="main-content">
+            <!-- WebRTC Video Streaming Section with Audio Control and Recent Events -->
+            <div id="video-streaming-section" class="video-streaming-section">
+                <div class="streaming-header">
+                    <h2>Live Video Stream</h2>
+                    <div class="streaming-controls">
+                        <button id="start-stream-btn" class="btn btn-primary">Start Stream</button>
+                        <button id="stop-stream-btn" class="btn btn-secondary" disabled>Stop Stream</button>
+                    </div>
+                </div>
+                
+                <div class="video-layout">
+                    <!-- Left side - Video -->
+                    <div class="video-side">
+                        <div class="video-container">
+                            <video id="webrtc-video" autoplay muted playsinline></video>
+                            <div class="video-overlay">
+                                <div class="streaming-status">
+                                    <span id="webrtc-status-indicator" class="status-indicator status-disconnected"></span>
+                                    <span id="webrtc-status-text">Disconnected</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                    </div>
+                    
+                    <!-- Right side - Audio Control and Recent Events -->
+                    <div class="video-controls-side">
+                        <!-- Audio Control Section -->
+                        <div class="audio-control-panel">
+                            <h3>Audio Control</h3>
+                            <div class="audio-control-content">
+                                <div class="control-group">
+                                    <label for="audio-duration-minutes">Duration (Minutes):</label>
+                                    <input type="number" id="audio-duration-minutes" min="0" max="59" value="1" class="duration-input">
+                                </div>
+                                <div class="control-group">
+                                    <label for="audio-duration-seconds">Duration (Seconds):</label>
+                                    <input type="number" id="audio-duration-seconds" min="0" max="59" value="0" class="duration-input">
+                                </div>
+                                <div class="control-group">
+                                    <label for="audio-stop-condition">Stop When:</label>
+                                    <select id="audio-stop-condition" class="stop-condition-select">
+                                        <option value="duration">Duration Reached</option>
+                                        <option value="manual" selected>Manual Stop</option>
+                                        <option value="event-end">Event Ends</option>
+                                    </select>
+                                </div>
+                                <div class="audio-control-buttons">
+                                    <button id="apply-audio-settings" class="btn btn-primary">Apply Settings</button>
+                                    <button id="stop-audio-now" class="btn btn-danger">Stop Now</button>
+                                </div>
+                                <div id="audio-control-status" class="audio-control-status">
+                                    <!-- Status messages will be displayed here -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Recent Events Section -->
+                        <div class="recent-events-panel">
+                            <h3>Most Recent Events</h3>
+                            <div id="recent-events-list" class="recent-events-list">
+                                <div class="no-recent-events">No recent events</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+                <div class="events-container">
                 
                 <div class="events-table-container">
                     <table class="events-table">
@@ -36,12 +105,11 @@
                                 <th>DATE & TIME</th>
                                 <th>EVENT CATEGORY</th>
                                 <th>IMAGE / AUDIO</th>
-                                <th>ACTIONS</th>
                             </tr>
                         </thead>
                         <tbody id="events-list">
                             <tr class="no-events-row">
-                                <td colspan="4" class="no-events">No events received yet</td>
+                                <td colspan="3" class="no-events">No events received yet</td>
                             </tr>
                         </tbody>
                     </table>
@@ -64,6 +132,7 @@
                         </button>
                     </div>
                 </div>
+            </div>
             </div>
 
             <!-- Image preview modal -->
@@ -107,7 +176,9 @@
         Your browser does not support the audio element.
     </audio>
 
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script src="/env.js?v=2.2"></script>
     <script src="app.js?v=2.2"></script>
+    <script src="webrtc-client.js?v=2.2"></script>
 </body>
 </html>

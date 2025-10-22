@@ -7,6 +7,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const eventsRouter = require('./routes/events.routes');
 const { registerSseRoute } = require('./lib/sse');
 const webhookRouter = require('./routes/webhook.routes');
+const WebRTCStreamingService = require('./lib/webrtc/streaming-service');
 
 
 const app = express();
@@ -57,7 +58,11 @@ app.get('/env.js', (req, res) => {
     maxEvents: Number(process.env.MAX_EVENTS),
     maxCompactEvents: Number(process.env.MAX_COMPACT_EVENTS),
     reconnectMs: Number(process.env.SSE_RECONNECT_MS),
-    volume: Number(process.env.DEFAULT_VOLUME)
+    volume: Number(process.env.DEFAULT_VOLUME),
+    // WebRTC streaming configuration
+    webrtcEnabled: process.env.WEBRTC_ENABLED === 'true',
+    rtspUrl: process.env.RTSP_URL,
+    streamUrl: process.env.STREAM_URL || '/stream/stream.m3u8'
   };
   res.send(`window.__APP_CONFIG__ = ${JSON.stringify(cfg)};`);
 });
@@ -73,6 +78,38 @@ const server = app.listen(PORT, () => {
 	console.log(`Server listening on http://localhost:${PORT}`);
 });
 
+// Initialize WebRTC streaming service
+let streamingService = null;
+if (process.env.WEBRTC_ENABLED === 'true') {
+  streamingService = new WebRTCStreamingService(server, {
+    rtspUrl: process.env.RTSP_URL,
+    frameRate: Number(process.env.RTSP_FRAME_RATE) || 30,
+    width: Number(process.env.RTSP_WIDTH) || 1280,
+    height: Number(process.env.RTSP_HEIGHT) || 720,
+    bitrate: process.env.RTSP_BITRATE || '2000k'
+  });
+
+  // Start streaming service
+  streamingService.start().catch(err => {
+    console.error('Failed to start WebRTC streaming service:', err);
+  });
+
+  // Add streaming status endpoint
+  app.get('/api/streaming/status', (req, res) => {
+    res.json(streamingService.getStatus());
+  });
+
+  // Add RTSP test endpoint
+  app.get('/api/streaming/test-rtsp', async (req, res) => {
+    try {
+      const result = await streamingService.testRTSPConnection();
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+}
+
 // Start background Kafka -> SSE bridge
 // const service = new AppService();
 // service.start().catch(err => {
@@ -82,7 +119,12 @@ const server = app.listen(PORT, () => {
 
 
 process.on('SIGINT', async () => {
-  try { await service.stop(); } catch (_) {}
+  try { 
+    if (streamingService) {
+      await streamingService.stop(); 
+    }
+    // await service.stop(); 
+  } catch (_) {}
   server.close(() => process.exit(0));
 });
 
