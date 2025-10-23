@@ -2079,6 +2079,33 @@ main {
     gap: 6px;
 }
 
+.custom-event-row {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.custom-event-row .checkbox-label {
+    flex-shrink: 0;
+}
+
+.custom-event-row .control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    flex: 1;
+    min-width: 200px;
+}
+
+.custom-event-row .control-group label {
+    font-size: 0.8rem;
+    color: #666;
+    margin: 0;
+    white-space: nowrap;
+}
+
 /* .stop-alarm-section {
     margin-bottom: 15px;
 }
