@@ -1973,7 +1973,7 @@ main {
 .audio-control-buttons {
     display: flex;
     gap: 8px;
-    justify-content: center;
+    justify-content: flex-end;
     margin-top: 15px;
     width: 100%;
     box-sizing: border-box;
@@ -2061,6 +2061,22 @@ main {
 /* Play Mode and Stop Alarm sections */
 .play-mode-section {
     margin-bottom: 15px;
+}
+
+.play-mode-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.play-mode-header .section-label {
+    margin-bottom: 0;
+}
+
+.play-mode-header .audio-control-buttons {
+    margin-top: 0;
+    gap: 6px;
 }
 
 /* .stop-alarm-section {

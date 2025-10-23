@@ -61,7 +61,17 @@
                             <div class="audio-control-content">
                                 <!-- Select Play Mode Section -->
                                 <div class="control-group play-mode-section">
-                                    <label class="section-label">Select Play Mode:</label>
+                                    <div class="play-mode-header">
+                                        <label class="section-label">Select Play Mode:</label>
+                                        <div class="audio-control-buttons">
+                                            <button id="apply-audio-settings" class="btn btn-icon" title="Apply Settings">
+                                                <span class="icon">✓</span>
+                                            </button>
+                                            <button id="stop-audio-now" class="btn btn-icon btn-danger" title="Stop Now">
+                                                <span class="icon">⏹</span>
+                                            </button>
+                                        </div>
+                                    </div>
                                     <div class="checkbox-group">
                                         <label class="checkbox-label">
                                             <input type="checkbox" id="play-mode-infinite" name="play-mode" value="infinite">
@@ -104,15 +114,6 @@
                                         </div>
                                     </div>
                                 </div> -->
-                                
-                                <div class="audio-control-buttons">
-                                    <button id="apply-audio-settings" class="btn btn-icon" title="Apply Settings">
-                                        <span class="icon">✓</span>
-                                    </button>
-                                    <button id="stop-audio-now" class="btn btn-icon btn-danger" title="Stop Now">
-                                        <span class="icon">⏹</span>
-                                    </button>
-                                </div>
                                 <div id="countdown-timer" class="countdown-timer" style="display: none;">
                                     <div class="timer-label">Time Remaining:</div>
                                     <div id="timer-display" class="timer-display">--:--</div>
