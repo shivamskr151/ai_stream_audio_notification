@@ -1919,8 +1919,8 @@ main {
 .checkbox-group {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-top: 6px;
+    gap: 4px;
+    margin-top: 4px;
 }
 
 .checkbox-label {
@@ -2060,14 +2060,14 @@ main {
 
 /* Play Mode and Stop Alarm sections */
 .play-mode-section {
-    margin-bottom: 15px;
+    margin-bottom: 10px;
 }
 
 .play-mode-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 .play-mode-header .section-label {
@@ -2082,7 +2082,7 @@ main {
 .custom-event-row {
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 8px;
     flex-wrap: wrap;
 }
 
@@ -2093,10 +2093,10 @@ main {
 .custom-event-row .control-group {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     margin: 0;
     flex: 1;
-    min-width: 200px;
+    min-width: 180px;
 }
 
 .custom-event-row .control-group label {
