@@ -3,7 +3,7 @@ module.exports = {
       {
         name: "qa-backend",
         script: "server.js",
-        cwd: "/home/crane/ai_audio_notification/backend",
+        cwd: "/home/crane/ai_stream_audio_notification/backend",
         instances: 1,            // Or 'max' for all CPU cores
         exec_mode: "fork",       // Or 'cluster'
         env_file: ".env",
