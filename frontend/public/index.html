@@ -14,7 +14,6 @@
         <header>
             <h1>Audio Notifications</h1>
             <div class="header-controls">
-                <input id="events-search" type="search" placeholder="Search events" aria-label="Search events" />
                 <div class="connection-status">
                     <span id="status-indicator" class="status-disconnected"></span>
                     <span id="status-text">Disconnected</span>
@@ -32,10 +31,6 @@
             <div id="video-streaming-section" class="video-streaming-section">
                 <div class="streaming-header">
                     <h2>Live Video Stream</h2>
-                    <div class="streaming-controls">
-                        <button id="start-stream-btn" class="btn btn-primary">Start Stream</button>
-                        <button id="stop-stream-btn" class="btn btn-secondary" disabled>Stop Stream</button>
-                    </div>
                 </div>
                 
                 <div class="video-layout">
@@ -51,33 +46,76 @@
                             </div>
                         </div>
                         
+                        <div class="streaming-controls">
+                            <button id="start-stream-btn" class="btn btn-primary">Start Stream</button>
+                            <button id="stop-stream-btn" class="btn btn-secondary" disabled>Stop Stream</button>
+                        </div>
+                        
                     </div>
                     
                     <!-- Right side - Audio Control and Recent Events -->
                     <div class="video-controls-side">
                         <!-- Audio Control Section -->
                         <div class="audio-control-panel">
-                            <h3>Audio Control</h3>
+                            <h3>Alarm Control</h3>
                             <div class="audio-control-content">
-                                <div class="control-group">
-                                    <label for="audio-duration-minutes">Duration (Minutes):</label>
-                                    <input type="number" id="audio-duration-minutes" min="0" max="59" value="1" class="duration-input">
+                                <!-- Select Play Mode Section -->
+                                <div class="control-group play-mode-section">
+                                    <label class="section-label">Select Play Mode:</label>
+                                    <div class="checkbox-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="play-mode-infinite" name="play-mode" value="infinite">
+                                            <span class="checkmark"></span>
+                                            Infinite
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="play-mode-custom" name="play-mode" value="custom-event">
+                                            <span class="checkmark"></span>
+                                            Custom Event
+                                        </label>
+                                    </div>
+                                    <div class="control-group" id="custom-duration-group" style="display: none;">
+                                        <label for="custom-duration-minutes">Duration (Minutes):</label>
+                                        <input type="number" id="custom-duration-minutes" min="1" max="999" value="5" class="duration-input">
+                                    </div>
                                 </div>
-                                <div class="control-group">
-                                    <label for="audio-duration-seconds">Duration (Seconds):</label>
-                                    <input type="number" id="audio-duration-seconds" min="0" max="59" value="0" class="duration-input">
-                                </div>
-                                <div class="control-group">
-                                    <label for="audio-stop-condition">Stop When:</label>
-                                    <select id="audio-stop-condition" class="stop-condition-select">
-                                        <option value="duration">Duration Reached</option>
-                                        <option value="manual" selected>Manual Stop</option>
-                                        <option value="event-end">Event Ends</option>
-                                    </select>
-                                </div>
+                                
+                                <!-- Stop Alarm Until Section -->
+                                <!-- <div class="control-group stop-alarm-section">
+                                    <label class="checkbox-label stop-alarm-checkbox">
+                                        <input type="checkbox" id="stop-alarm-enabled" name="stop-alarm-enabled">
+                                        <span class="checkmark"></span>
+                                        Stop Alarm Until
+                                    </label>
+                                    <div class="datetime-fields" id="stop-alarm-datetime-fields" style="display: none;">
+                                        <div class="datetime-field">
+                                            <label for="stop-from-date">From:</label>
+                                            <div class="datetime-input-group">
+                                                <input type="date" id="stop-from-date" class="date-input" aria-label="Stop alarm from date">
+                                                <input type="time" id="stop-from-time" class="time-input" aria-label="Stop alarm from time">
+                                            </div>
+                                        </div>
+                                        <div class="datetime-field">
+                                            <label for="stop-to-date">To:</label>
+                                            <div class="datetime-input-group">
+                                                <input type="date" id="stop-to-date" class="date-input" aria-label="Stop alarm to date">
+                                                <input type="time" id="stop-to-time" class="time-input" aria-label="Stop alarm to time">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div> -->
+                                
                                 <div class="audio-control-buttons">
-                                    <button id="apply-audio-settings" class="btn btn-primary">Apply Settings</button>
-                                    <button id="stop-audio-now" class="btn btn-danger">Stop Now</button>
+                                    <button id="apply-audio-settings" class="btn btn-icon" title="Apply Settings">
+                                        <span class="icon">✓</span>
+                                    </button>
+                                    <button id="stop-audio-now" class="btn btn-icon btn-danger" title="Stop Now">
+                                        <span class="icon">⏹</span>
+                                    </button>
+                                </div>
+                                <div id="countdown-timer" class="countdown-timer" style="display: none;">
+                                    <div class="timer-label">Time Remaining:</div>
+                                    <div id="timer-display" class="timer-display">--:--</div>
                                 </div>
                                 <div id="audio-control-status" class="audio-control-status">
                                     <!-- Status messages will be displayed here -->
@@ -97,7 +135,10 @@
             </div>
 
                 <div class="events-container">
-                <h2>Event History</h2>
+                <div class="events-header">
+                    <h2>Event History</h2>
+                    <input id="events-search" type="search" placeholder="Search events" aria-label="Search events" />
+                </div>
                 
                 <div class="events-table-container">
                     <table class="events-table">
@@ -172,8 +213,6 @@
 
     <!-- Audio element for notifications -->
     <audio id="notification-audio" preload="auto">
-        <source src="notification.mp3" type="audio/mpeg">
-        <source src="notification.wav" type="audio/wav">
         Your browser does not support the audio element.
     </audio>
 

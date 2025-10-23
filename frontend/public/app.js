@@ -24,6 +24,8 @@ class SSEAudioNotifier {
         this.initializeAudioPermission(); // Initialize audio permission handling
         // Show/hide video streaming section based on configuration
         this.initializeVideoStreaming();
+        // Load saved alarm settings from Local Storage
+        this.loadAlarmSettings();
         // Preload recent events from SQLite without playing audio
         this.loadInitialEvents();
         this.loadInitialRecentEvents(); // Load initial recent events
@@ -70,12 +72,23 @@ class SSEAudioNotifier {
         this.pageNumbersContainer = document.getElementById('page-numbers');
         
         // Audio Control elements
-        this.audioDurationMinutes = document.getElementById('audio-duration-minutes');
-        this.audioDurationSeconds = document.getElementById('audio-duration-seconds');
-        this.audioStopCondition = document.getElementById('audio-stop-condition');
+        this.playModeInfinite = document.getElementById('play-mode-infinite');
+        this.playModeCustom = document.getElementById('play-mode-custom');
+        this.customDurationGroup = document.getElementById('custom-duration-group');
+        this.customDurationMinutes = document.getElementById('custom-duration-minutes');
         this.applyAudioSettingsBtn = document.getElementById('apply-audio-settings');
         this.stopAudioNowBtn = document.getElementById('stop-audio-now');
         this.audioControlStatus = document.getElementById('audio-control-status');
+        this.countdownTimer = document.getElementById('countdown-timer');
+        this.timerDisplay = document.getElementById('timer-display');
+        
+        // Stop Alarm Until elements
+        // this.stopAlarmEnabled = document.getElementById('stop-alarm-enabled');
+        // this.stopAlarmDatetimeFields = document.getElementById('stop-alarm-datetime-fields');
+        // this.stopFromDate = document.getElementById('stop-from-date');
+        // this.stopFromTime = document.getElementById('stop-from-time');
+        // this.stopToDate = document.getElementById('stop-to-date');
+        // this.stopToTime = document.getElementById('stop-to-time');
         
         // Recent Events elements
         this.recentEventsList = document.getElementById('recent-events-list');
@@ -200,6 +213,31 @@ class SSEAudioNotifier {
         if (this.pageNextBtn) this.pageNextBtn.addEventListener('click', () => goTo(Math.min(this.totalPages, this.currentPage + 1)));
         
         // Audio Control event bindings
+        if (this.playModeInfinite) {
+            this.playModeInfinite.addEventListener('change', () => this.handlePlayModeChange());
+        }
+        if (this.playModeCustom) {
+            this.playModeCustom.addEventListener('change', () => this.handlePlayModeChange());
+        }
+        if (this.customDurationMinutes) {
+            this.customDurationMinutes.addEventListener('input', () => this.saveAlarmSettings());
+        }
+        // Stop Alarm Until event listeners
+        // if (this.stopAlarmEnabled) {
+        //     this.stopAlarmEnabled.addEventListener('change', () => this.handleStopAlarmToggle());
+        // }
+        // if (this.stopFromDate) {
+        //     this.stopFromDate.addEventListener('change', () => this.handleStopAlarmChange());
+        // }
+        // if (this.stopFromTime) {
+        //     this.stopFromTime.addEventListener('change', () => this.handleStopAlarmChange());
+        // }
+        // if (this.stopToDate) {
+        //     this.stopToDate.addEventListener('change', () => this.handleStopAlarmChange());
+        // }
+        // if (this.stopToTime) {
+        //     this.stopToTime.addEventListener('change', () => this.handleStopAlarmChange());
+        // }
         if (this.applyAudioSettingsBtn) {
             this.applyAudioSettingsBtn.addEventListener('click', () => this.applyAudioSettings());
         }
@@ -499,6 +537,9 @@ class SSEAudioNotifier {
             this.audioDurationTimer = null;
         }
 
+        // Hide countdown timer
+        this.hideCountdownTimer();
+
         // Stop audio file
         if (this.notificationAudio) {
             this.notificationAudio.pause();
@@ -603,6 +644,12 @@ class SSEAudioNotifier {
             console.log('Audio is stopped by user, ignoring event');
             return;
         }
+        
+        // If we're in a scheduled stop alarm period, ignore the event
+        // if (this.isInStopAlarmPeriod()) {
+        //     console.log('Audio is stopped by schedule, ignoring event');
+        //     return;
+        // }
         
         const key = this.getEventKey(data);
         if (this.seenEventKeys.has(key)) {
@@ -717,17 +764,25 @@ class SSEAudioNotifier {
         
         // Extract common fields with defaults
         const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
-        const imageUrl = (data.image_url || (data.data && data.data.image_url) || '/placeholder.svg');
+        const imageUrl = (data.image_url || (data.data && data.data.image_url) || data.imageUrl || (data.data && data.data.imageUrl) || null);
+        
+        // Validate image URL - only show if it's a real URL and not empty
+        const isValidImageUrl = imageUrl && imageUrl !== '/placeholder.svg' && imageUrl !== '' && imageUrl !== null && imageUrl !== undefined;
+        
+        // Debug logging for image URL (can be removed in production)
+        // console.log('Event data:', data);
+        // console.log('Extracted imageUrl:', imageUrl);
+        // console.log('Image URL exists:', !!imageUrl);
         
         // Use event_type from backend, fallback to media-based category
         let eventCategory = data.event_type || 'Media Event';
         if (!data.event_type) {
             // Fallback: Generate event category based on available media
-            if (audioUrl && imageUrl) {
+            if (audioUrl && isValidImageUrl) {
                 eventCategory = 'Audio & Image Event';
             } else if (audioUrl) {
                 eventCategory = 'Audio Event';
-            } else if (imageUrl) {
+            } else if (isValidImageUrl) {
                 eventCategory = 'Image Event';
             }
         }
@@ -743,7 +798,7 @@ class SSEAudioNotifier {
             </td>
             <td class="media-column">
                 <div class="media-buttons">
-                    ${imageUrl ? `
+                    ${isValidImageUrl ? `
                         <button class="media-btn image-btn" data-image-url="${imageUrl}">
                             📷 Image
                         </button>
@@ -1077,7 +1132,7 @@ class SSEAudioNotifier {
             }
         }
         const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
-        const imageUrl = (data.image_url || (data.data && data.data.image_url) || '/placeholder.svg');
+        const imageUrl = (data.image_url || (data.data && data.data.image_url) || data.imageUrl || (data.data && data.data.imageUrl) || null);
         const label = (audioUrl || imageUrl) ? 'media' : (data.event_type || 'event');
         li.innerHTML = `
             <span class="etype">${label}</span>
@@ -1194,7 +1249,7 @@ class SSEAudioNotifier {
     getEventKey(evt) {
         const ts = evt && evt.timestamp ? String(evt.timestamp) : '';
         const a = (evt && (evt.audio_url || (evt.data && evt.data.audio_url))) || '';
-        const i = (evt && (evt.image_url || (evt.data && evt.data.image_url))) || '';
+        const i = (evt && (evt.image_url || (evt.data && evt.data.image_url) || evt.imageUrl || (evt.data && evt.data.imageUrl))) || '';
         return `${ts}|${a}|${i}`;
     }
 
@@ -1359,36 +1414,89 @@ class SSEAudioNotifier {
     }
 
     // Audio Control Methods
-    applyAudioSettings() {
-        const minutes = parseInt(this.audioDurationMinutes.value) || 0;
-        const seconds = parseInt(this.audioDurationSeconds.value) || 0;
-        const stopCondition = this.audioStopCondition.value;
+    handlePlayModeChange() {
+        const infiniteChecked = this.playModeInfinite.checked;
+        const customChecked = this.playModeCustom.checked;
         
-        const totalSeconds = minutes * 60 + seconds;
-        
-        if (totalSeconds <= 0 && stopCondition === 'duration') {
-            alert('Please enter a valid duration (at least 1 second) for duration-based stopping');
-            return;
+        // Ensure only one checkbox is selected at a time
+        if (infiniteChecked && customChecked) {
+            // If both are checked, uncheck the one that wasn't just clicked
+            if (event.target === this.playModeInfinite) {
+                this.playModeCustom.checked = false;
+            } else {
+                this.playModeInfinite.checked = false;
+            }
         }
         
-        // Store the settings for use in audio playback
-        this.audioSettings = {
-            duration: totalSeconds,
-            stopCondition: stopCondition,
-            minutes: minutes,
-            seconds: seconds
-        };
-        
-        console.log('Audio settings applied:', this.audioSettings);
-        
-        
-        // Apply the settings to current audio if playing
-        if (this.isAudioPlaying) {
-            this.applySettingsToCurrentAudio();
+        // Show/hide custom duration input based on custom event selection
+        if (this.playModeCustom.checked) {
+            this.customDurationGroup.style.display = 'block';
         } else {
-            // If audio is not playing, just show the settings feedback
-            this.showAudioSettingsFeedback();
+            this.customDurationGroup.style.display = 'none';
         }
+        
+        // Save UI state to Local Storage (without applying audio settings)
+        this.saveAlarmSettings();
+    }
+    
+    applyAudioSettings() {
+        const infiniteChecked = this.playModeInfinite.checked;
+        const customChecked = this.playModeCustom.checked;
+        
+        // Only validate play mode if either checkbox is checked
+        if (infiniteChecked || customChecked) {
+            let totalSeconds = 0;
+            let stopCondition = 'manual';
+            let playMode = 'infinite';
+            
+            if (customChecked) {
+                const minutes = parseInt(this.customDurationMinutes.value) || 0;
+                totalSeconds = minutes * 60;
+                
+                if (totalSeconds <= 0) {
+                    alert('Please enter a valid duration (at least 1 minute) for custom event');
+                    return;
+                }
+                stopCondition = 'duration';
+                playMode = 'custom-event';
+            } else if (infiniteChecked) {
+                stopCondition = 'manual';
+                playMode = 'infinite';
+            }
+            
+            // Store the settings for use in audio playback
+            this.audioSettings = {
+                duration: totalSeconds,
+                stopCondition: stopCondition,
+                playMode: playMode,
+                minutes: playMode === 'custom-event' ? parseInt(this.customDurationMinutes.value) || 0 : 0
+            };
+            
+            console.log('Audio settings applied:', this.audioSettings);
+            
+            // Show countdown timer if custom event is selected
+            if (playMode === 'custom-event' && totalSeconds > 0) {
+                this.showCountdownTimer(totalSeconds);
+            } else {
+                this.hideCountdownTimer();
+            }
+            
+            // Apply the settings to current audio if playing
+            if (this.isAudioPlaying) {
+                this.applySettingsToCurrentAudio();
+            } else {
+                // If audio is not playing, just show the settings feedback
+                this.showAudioSettingsFeedback();
+            }
+        } else {
+            // If no play mode is selected, clear any existing audio settings to prevent interference
+            console.log('No play mode selected, clearing audio settings to prevent interference');
+            this.audioSettings = null;
+            this.showAudioStatus('Stop alarm settings saved', 'success');
+        }
+        
+        // Always save settings to Local Storage
+        this.saveAlarmSettings();
     }
     
     applySettingsToCurrentAudio() {
@@ -1426,11 +1534,24 @@ class SSEAudioNotifier {
     }
     
     startDurationTimerIfNeeded() {
-        if (!this.audioSettings || this.audioSettings.stopCondition !== 'duration') return;
-        if (this.audioDurationTimer) return; // Timer already set
+        console.log('startDurationTimerIfNeeded called:', {
+            audioSettings: this.audioSettings,
+            stopCondition: this.audioSettings ? this.audioSettings.stopCondition : 'none',
+            duration: this.audioSettings ? this.audioSettings.duration : 'none'
+        });
+        
+        if (!this.audioSettings || this.audioSettings.stopCondition !== 'duration') {
+            console.log('No duration timer needed - audioSettings:', this.audioSettings);
+            return;
+        }
+        if (this.audioDurationTimer) {
+            console.log('Duration timer already set, skipping');
+            return; // Timer already set
+        }
         
         const { duration } = this.audioSettings;
         if (duration > 0) {
+            console.log('Starting duration timer for:', duration, 'seconds');
             this.startDurationTimer(duration);
         }
     }
@@ -1474,6 +1595,341 @@ class SSEAudioNotifier {
         }, 3000);
     }
     
+    showCountdownTimer(totalSeconds, isRestoring = false) {
+        if (!this.countdownTimer || !this.timerDisplay) return;
+        
+        this.countdownTimer.style.display = 'block';
+        
+        // If not restoring, set new end time
+        if (!isRestoring) {
+            this.countdownEndTime = Date.now() + (totalSeconds * 1000);
+        }
+        
+        // Clear any existing countdown timer
+        if (this.countdownInterval) {
+            clearInterval(this.countdownInterval);
+        }
+        
+        // Update countdown every second
+        this.countdownInterval = setInterval(() => {
+            const now = Date.now();
+            const remaining = Math.max(0, this.countdownEndTime - now);
+            const remainingSeconds = Math.ceil(remaining / 1000);
+            
+            if (remainingSeconds <= 0) {
+                this.hideCountdownTimer();
+                return;
+            }
+            
+            const minutes = Math.floor(remainingSeconds / 60);
+            const seconds = remainingSeconds % 60;
+            const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            this.timerDisplay.textContent = timeString;
+            
+            // Save countdown state every 5 seconds to ensure persistence
+            if (remainingSeconds % 5 === 0) {
+                this.saveAlarmSettings();
+            }
+        }, 1000);
+        
+        // Initial update
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        this.timerDisplay.textContent = timeString;
+    }
+    
+    hideCountdownTimer() {
+        if (!this.countdownTimer) return;
+        
+        this.countdownTimer.style.display = 'none';
+        
+        if (this.countdownInterval) {
+            clearInterval(this.countdownInterval);
+            this.countdownInterval = null;
+        }
+        
+        this.countdownEndTime = null;
+    }
+    
+    // Stop Alarm Until Methods
+    // handleStopAlarmToggle() {
+    //     const isEnabled = this.stopAlarmEnabled.checked;
+    //     
+    //     if (isEnabled) {
+    //         this.stopAlarmDatetimeFields.style.display = 'block';
+    //         console.log('Stop alarm enabled - showing datetime fields');
+    //     } else {
+    //         this.stopAlarmDatetimeFields.style.display = 'none';
+    //         console.log('Stop alarm disabled - hiding datetime fields');
+    //         
+    //         // Clear the datetime values when disabled
+    //         if (this.stopFromDate) this.stopFromDate.value = '';
+    //         if (this.stopFromTime) this.stopFromTime.value = '';
+    //         if (this.stopToDate) this.stopToDate.value = '';
+    //         if (this.stopToTime) this.stopToTime.value = '';
+    //     }
+    //     
+    //     // Save settings
+    //     this.saveAlarmSettings();
+    // }
+    
+    // handleStopAlarmChange() {
+    //     // Only validate if stop alarm is enabled
+    //     if (!this.stopAlarmEnabled || !this.stopAlarmEnabled.checked) {
+    //         return;
+    //     }
+    //     
+    //     const fromDate = this.stopFromDate ? this.stopFromDate.value : '';
+    //     const fromTime = this.stopFromTime ? this.stopFromTime.value : '';
+    //     const toDate = this.stopToDate ? this.stopToDate.value : '';
+    //     const toTime = this.stopToTime ? this.stopToTime.value : '';
+    //     
+    //     console.log('Stop alarm change detected:', { fromDate, fromTime, toDate, toTime });
+    //     
+    //     // Validate that both from and to are filled if either is filled
+    //     if ((fromDate || fromTime) && (!toDate || !toTime)) {
+    //         this.showAudioStatus('Please set both "To" date and time when setting "From"', 'warning');
+    //         return;
+    //     }
+    //     
+    //     if ((toDate || toTime) && (!fromDate || !fromTime)) {
+    //         this.showAudioStatus('Please set both "From" date and time when setting "To"', 'warning');
+    //         return;
+    //     }
+    //     
+    //     // If both are set, validate the time range
+    //     if (fromDate && fromTime && toDate && toTime) {
+    //         const fromDateTime = new Date(`${fromDate}T${fromTime}`);
+    //         const toDateTime = new Date(`${toDate}T${toTime}`);
+    //         
+    //         console.log('Stop alarm period:', { fromDateTime, toDateTime, now: new Date() });
+    //         
+    //         if (fromDateTime >= toDateTime) {
+    //             this.showAudioStatus('"From" time must be before "To" time', 'warning');
+    //             return;
+    //         }
+    //         
+    //         // Just log the status without showing UI messages
+    //         const isInPeriod = this.isInStopAlarmPeriod();
+    //         console.log('Currently in stop period:', isInPeriod);
+    //         
+    //         if (isInPeriod) {
+    //             this.showAudioStatus('Alarm is currently stopped until the scheduled time', 'info');
+    //         } else {
+    //             this.showAudioStatus('Stop alarm period set successfully', 'success');
+    //         }
+    //     }
+    //     
+    //     // Save settings
+    //     this.saveAlarmSettings();
+    // }
+    
+    // checkStopAlarmPeriod() {
+    //     const fromDate = this.stopFromDate ? this.stopFromDate.value : '';
+    //     const fromTime = this.stopFromTime ? this.stopFromTime.value : '';
+    //     const toDate = this.stopToDate ? this.stopToDate.value : '';
+    //     const toTime = this.stopToTime ? this.stopToTime.value : '';
+    //     
+    //     if (!fromDate || !fromTime || !toDate || !toTime) {
+    //         return false;
+    //     }
+    //     
+    //     const now = new Date();
+    //     const fromDateTime = new Date(`${fromDate}T${fromTime}`);
+    //     const toDateTime = new Date(`${toDate}T${toTime}`);
+    //     
+    //     const isInStopPeriod = now >= fromDateTime && now <= toDateTime;
+    //     
+    //     if (isInStopPeriod) {
+    //         console.log('Currently in stop alarm period - audio will be blocked');
+    //         this.showAudioStatus('Alarm is currently stopped until the scheduled time', 'info');
+    //     } else {
+    //         console.log('Not in stop alarm period - audio will play normally');
+    //     }
+    //     
+    //     return isInStopPeriod;
+    // }
+    
+    // Silent version for checking without showing status messages
+    // isInStopAlarmPeriod() {
+    //     // First check if stop alarm is enabled
+    //     if (!this.stopAlarmEnabled || !this.stopAlarmEnabled.checked) {
+    //         return false;
+    //     }
+    //     
+    //     const fromDate = this.stopFromDate ? this.stopFromDate.value : '';
+    //     const fromTime = this.stopFromTime ? this.stopFromTime.value : '';
+    //     const toDate = this.stopToDate ? this.stopToDate.value : '';
+    //     const toTime = this.stopToTime ? this.stopToTime.value : '';
+    //     
+    //     if (!fromDate || !fromTime || !toDate || !toTime) {
+    //         return false;
+    //     }
+    //     
+    //     const now = new Date();
+    //     const fromDateTime = new Date(`${fromDate}T${fromTime}`);
+    //     const toDateTime = new Date(`${toDate}T${toTime}`);
+    //     
+    //     // Debug logging
+    //     console.log('Stop alarm check:', {
+    //         enabled: this.stopAlarmEnabled.checked,
+    //         now: now.toISOString(),
+    //         fromDateTime: fromDateTime.toISOString(),
+    //         toDateTime: toDateTime.toISOString(),
+    //         isInPeriod: now >= fromDateTime && now <= toDateTime
+    //     });
+    //     
+    //     return now >= fromDateTime && now <= toDateTime;
+    // }
+    
+    
+    // Local Storage Methods for Alarm Settings
+    saveAlarmSettings() {
+        const settingsToSave = {
+            // Save current audio settings if they exist
+            playMode: this.audioSettings ? this.audioSettings.playMode : null,
+            duration: this.audioSettings ? this.audioSettings.duration : 0,
+            stopCondition: this.audioSettings ? this.audioSettings.stopCondition : 'manual',
+            minutes: this.audioSettings ? this.audioSettings.minutes : 0,
+            // Save current UI state
+            infiniteChecked: this.playModeInfinite ? this.playModeInfinite.checked : false,
+            customChecked: this.playModeCustom ? this.playModeCustom.checked : false,
+            customDurationMinutes: this.customDurationMinutes ? this.customDurationMinutes.value : '5',
+            // Save stop alarm settings
+            // stopAlarmEnabled: this.stopAlarmEnabled ? this.stopAlarmEnabled.checked : false,
+            // stopFromDate: this.stopFromDate ? this.stopFromDate.value : '',
+            // stopFromTime: this.stopFromTime ? this.stopFromTime.value : '',
+            // stopToDate: this.stopToDate ? this.stopToDate.value : '',
+            // stopToTime: this.stopToTime ? this.stopToTime.value : '',
+            // Save countdown timer state
+            countdownEndTime: this.countdownEndTime,
+            isAudioPlaying: this.isAudioPlaying,
+            timestamp: Date.now()
+        };
+        
+        try {
+            localStorage.setItem('alarmControlSettings', JSON.stringify(settingsToSave));
+            console.log('Alarm settings saved to Local Storage:', settingsToSave);
+        } catch (error) {
+            console.warn('Failed to save alarm settings to Local Storage:', error);
+        }
+    }
+    
+    loadAlarmSettings() {
+        try {
+            const savedSettings = localStorage.getItem('alarmControlSettings');
+            if (!savedSettings) return;
+            
+            const settings = JSON.parse(savedSettings);
+            console.log('Loading alarm settings from Local Storage:', settings);
+            
+            // Restore checkbox states
+            if (this.playModeInfinite && settings.infiniteChecked !== undefined) {
+                this.playModeInfinite.checked = settings.infiniteChecked;
+            }
+            if (this.playModeCustom && settings.customChecked !== undefined) {
+                this.playModeCustom.checked = settings.customChecked;
+            }
+            
+            // Restore custom duration input
+            if (this.customDurationMinutes && settings.customDurationMinutes !== undefined) {
+                this.customDurationMinutes.value = settings.customDurationMinutes;
+            }
+            
+            // Show/hide custom duration group based on checkbox state
+            if (this.customDurationGroup) {
+                this.customDurationGroup.style.display = this.playModeCustom && this.playModeCustom.checked ? 'block' : 'none';
+            }
+            
+            // Restore stop alarm settings
+            // if (this.stopAlarmEnabled && settings.stopAlarmEnabled !== undefined) {
+            //     this.stopAlarmEnabled.checked = settings.stopAlarmEnabled;
+            //     // Show/hide datetime fields based on checkbox state
+            //     if (this.stopAlarmDatetimeFields) {
+            //         this.stopAlarmDatetimeFields.style.display = settings.stopAlarmEnabled ? 'block' : 'none';
+            //     }
+            // }
+            // if (this.stopFromDate && settings.stopFromDate !== undefined) {
+            //     this.stopFromDate.value = settings.stopFromDate;
+            // }
+            // if (this.stopFromTime && settings.stopFromTime !== undefined) {
+            //     this.stopFromTime.value = settings.stopFromTime;
+            // }
+            // if (this.stopToDate && settings.stopToDate !== undefined) {
+            //     this.stopToDate.value = settings.stopToDate;
+            // }
+            // if (this.stopToTime && settings.stopToTime !== undefined) {
+            //     this.stopToTime.value = settings.stopToTime;
+            // }
+            
+            // Restore audio settings object only if a play mode is actually selected
+            if (settings.playMode && settings.duration !== undefined && settings.stopCondition && 
+                (settings.infiniteChecked || settings.customChecked)) {
+                this.audioSettings = {
+                    playMode: settings.playMode,
+                    duration: settings.duration,
+                    stopCondition: settings.stopCondition,
+                    minutes: settings.minutes || 0
+                };
+                
+                console.log('Alarm settings restored:', this.audioSettings);
+            } else {
+                // Clear audio settings if no play mode is selected
+                this.audioSettings = null;
+                console.log('No play mode selected, clearing audio settings');
+            }
+            
+            // Restore countdown timer and audio playback if applicable
+            this.restoreCountdownTimer(settings);
+            
+        } catch (error) {
+            console.warn('Failed to load alarm settings from Local Storage:', error);
+        }
+    }
+    
+    restoreCountdownTimer(settings) {
+        // Check if we have a saved countdown timer state
+        if (settings.countdownEndTime && settings.timestamp) {
+            const now = Date.now();
+            const timeElapsed = now - settings.timestamp;
+            const originalEndTime = settings.countdownEndTime;
+            const adjustedEndTime = originalEndTime - timeElapsed;
+            
+            // Only restore if there's still time remaining
+            if (adjustedEndTime > now) {
+                const remainingSeconds = Math.ceil((adjustedEndTime - now) / 1000);
+                
+                console.log(`Restoring countdown timer with ${remainingSeconds} seconds remaining`);
+                
+                // Restore the countdown timer
+                this.countdownEndTime = adjustedEndTime;
+                this.showCountdownTimer(remainingSeconds, true);
+                
+                // If audio was playing, resume it
+                if (settings.isAudioPlaying && this.audioSettings && this.audioSettings.playMode === 'custom-event') {
+                    console.log('Resuming audio playback from saved state');
+                    this.isAudioPlaying = true;
+                    this.isStopping = false;
+                    this.applySettingsToCurrentAudio();
+                    this.playNotificationSound();
+                }
+            } else {
+                console.log('Countdown timer has expired, not restoring');
+            }
+        }
+    }
+    
+    clearAlarmSettings() {
+        try {
+            localStorage.removeItem('alarmControlSettings');
+            console.log('Alarm settings cleared from Local Storage');
+        } catch (error) {
+            console.warn('Failed to clear alarm settings from Local Storage:', error);
+        }
+    }
+    
     
     stopAudioNow() {
         this.stopAudioImmediate();
@@ -1496,6 +1952,34 @@ class SSEAudioNotifier {
             btn.textContent = originalText;
             btn.style.background = '';
         }, 1500);
+    }
+    
+    // Test function to create a sample event with image URL
+    createTestEvent() {
+        const testEvent = {
+            id: 'test-' + Date.now(),
+            audio_url: '/notification.wav',
+            image_url: '/placeholder.svg',
+            event_type: 'Test Event',
+            timestamp: new Date().toISOString()
+        };
+        
+        console.log('Creating test event:', testEvent);
+        this.handleEvent(testEvent);
+    }
+    
+    // Test function with a real image URL
+    createTestEventWithRealImage() {
+        const testEvent = {
+            id: 'test-real-' + Date.now(),
+            audio_url: '/notification.wav',
+            image_url: 'https://via.placeholder.com/300x200/007bff/ffffff?text=Test+Image',
+            event_type: 'Test Event with Real Image',
+            timestamp: new Date().toISOString()
+        };
+        
+        console.log('Creating test event with real image:', testEvent);
+        this.handleEvent(testEvent);
     }
     
     // Recent Events Methods
@@ -1528,19 +2012,28 @@ class SSEAudioNotifier {
         let eventType = data.event_type || 'Media Event';
         if (!data.event_type) {
             const audioUrl = (data.audio_url || (data.data && data.data.audio_url));
-            const imageUrl = (data.image_url || (data.data && data.data.image_url));
-            if (audioUrl && imageUrl) {
+            const imageUrl = (data.image_url || (data.data && data.data.image_url) || data.imageUrl || (data.data && data.data.imageUrl) || null);
+            const isValidImageUrl = imageUrl && imageUrl !== '/placeholder.svg' && imageUrl !== '' && imageUrl !== null && imageUrl !== undefined;
+            if (audioUrl && isValidImageUrl) {
                 eventType = 'Audio & Image Event';
             } else if (audioUrl) {
                 eventType = 'Audio Event';
-            } else if (imageUrl) {
+            } else if (isValidImageUrl) {
                 eventType = 'Image Event';
             }
         }
         
         // Create media buttons similar to the main table
         const audioUrl = (data.audio_url || (data.data && data.data.audio_url) || '/notification.wav');
-        const imageUrl = (data.image_url || (data.data && data.data.image_url) || '/placeholder.svg');
+        const imageUrl = (data.image_url || (data.data && data.data.image_url) || data.imageUrl || (data.data && data.data.imageUrl) || null);
+        
+        // Validate image URL - only show if it's a real URL and not empty
+        const isValidImageUrl = imageUrl && imageUrl !== '/placeholder.svg' && imageUrl !== '' && imageUrl !== null && imageUrl !== undefined;
+        
+        // Debug logging for recent events image URL (can be removed in production)
+        // console.log('Recent event data:', data);
+        // console.log('Recent event imageUrl:', imageUrl);
+        // console.log('Recent event image URL exists:', !!imageUrl);
         
         eventItem.innerHTML = `
             <div class="recent-event-header">
@@ -1548,22 +2041,21 @@ class SSEAudioNotifier {
                     <div class="recent-event-date">${dateStr}</div>
                     <div class="recent-event-time">${timeStr}</div>
                 </div>
-                <div class="recent-event-type">${eventType}</div>
             </div>
             <div class="recent-event-media">
-                ${imageUrl ? `
-                    <button class="btn btn-primary btn-small recent-image-btn">
-                        📷 Image
-                    </button>
+                ${isValidImageUrl ? `
+                    <div class="recent-event-image-container">
+                        <img src="${imageUrl}" alt="Event image" class="recent-event-image" />
+                    </div>
                 ` : ''}
             </div>
         `;
         
-        // Add event listeners for the buttons
-        const imageBtn = eventItem.querySelector('.recent-image-btn');
+        // Add event listeners for the image
+        const imageElement = eventItem.querySelector('.recent-event-image');
         
-        if (imageBtn) {
-            imageBtn.addEventListener('click', (e) => {
+        if (imageElement) {
+            imageElement.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 this.showModal(imageUrl);
@@ -1581,6 +2073,9 @@ class SSEAudioNotifier {
 document.addEventListener('DOMContentLoaded', () => {
     const app = new SSEAudioNotifier();
     
+    // Make app available globally for testing
+    window.app = app;
+    
     // Initialize pagination immediately to ensure it loads
     if (typeof app.loadPage === 'function') {
         app.loadPage(1).catch((e) => console.warn('Failed to load initial page:', e));
@@ -1590,4 +2085,5 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('SSE Audio Notifier initialized');
     console.log('Automatically connecting to SSE to start receiving events');
     console.log('Audio will play automatically when new events arrive');
+    console.log('Test functions available: app.createTestEvent() and app.createTestEventWithRealImage()');
 });
