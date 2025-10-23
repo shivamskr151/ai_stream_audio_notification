@@ -585,7 +585,7 @@ class SSEAudioNotifier {
             
             this.eventSource.onopen = () => {
                 this.isConnected = true;
-                this.updateConnectionStatus('Connected', 'status-connected');
+                this.updateConnectionStatus('SSE Connected', 'status-connected');
                 console.log('SSE connection opened');
             };
 
