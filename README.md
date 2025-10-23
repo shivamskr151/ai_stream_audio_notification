@@ -1,8 +1,8 @@
-# QualityAssurance - Real-time Event Notifications
+# AI Audio Notification System
 
 Created by Shivam Kumar
 
-A real-time notification system using Server-Sent Events (SSE) backed by a SQLite/Prisma data model. The backend exposes REST APIs for events, streams live events over SSE, and serves a static frontend UI with pagination, search, and audio controls.
+A comprehensive real-time AI audio notification system featuring live video streaming, WebRTC integration, Kafka message processing, and advanced audio controls. The system provides real-time event notifications with Server-Sent Events (SSE), live video streaming capabilities, and intelligent audio management with customizable play modes and duration controls.
 
 ## Data Persistence (SQLite via Prisma)
 
@@ -13,23 +13,49 @@ A real-time notification system using Server-Sent Events (SSE) backed by a SQLit
 
 ## Features
 
-- **SSE stream**: Live event stream on `/events` with automatic reconnection.
-- **REST API**: Full CRUD endpoints under `/api/events` with pagination and search.
-- **Webhook Integration**: External system integration via `/api/webhook` endpoint.
-- **SQLite + Prisma**: Typed access layer with simple Event model.
-- **Frontend UI**: Modern responsive interface with pagination, search, and audio controls.
-- **Audio Notifications**: Custom audio files with Web Audio API fallback and individual event controls.
-- **Search & Filtering**: Real-time search across event types, URLs, and timestamps.
-- **Environment-driven config**: All runtime values provided via `.env`.
+### Core Notification System
+- **SSE stream**: Live event stream on `/events` with automatic reconnection
+- **REST API**: Full CRUD endpoints under `/api/events` with pagination and search
+- **Webhook Integration**: External system integration via `/api/webhook` endpoint
+- **SQLite + Prisma**: Typed access layer with Event model for data persistence
+- **Kafka Integration**: Message processing with KafkaJS for scalable event handling
+
+### Live Video Streaming
+- **WebRTC Streaming**: Real-time video streaming with WebRTC technology
+- **RTSP Support**: Process RTSP streams and convert to WebRTC for browser compatibility
+- **HLS Fallback**: HTTP Live Streaming support for broader compatibility
+- **Live Video Controls**: Start/stop streaming with real-time status indicators
+
+### Advanced Audio Management
+- **Intelligent Audio Controls**: Multiple play modes (infinite, custom duration)
+- **Audio Permission Handling**: Automatic browser audio permission management
+- **Web Audio API Fallback**: Programmatic audio generation when files are unavailable
+- **Individual Event Controls**: Per-event audio start/stop functionality
+- **Temporary Stop Controls**: Configurable audio stop duration with countdown timers
+- **Volume Management**: Global and per-event volume controls
+
+### User Interface
+- **Modern Responsive Design**: Mobile-friendly interface with real-time updates
+- **Live Video Panel**: Integrated video streaming with audio control panel
+- **Recent Events Display**: Quick access to most recent events
+- **Advanced Search & Filtering**: Real-time search across event types, URLs, and timestamps
+- **Pagination System**: Efficient handling of large event datasets
+- **Modal Dialogs**: Image preview and configuration dialogs
+
+### System Integration
+- **Environment-driven Configuration**: All runtime values configurable via `.env`
+- **PM2 Process Management**: Production-ready process management
+- **Health Monitoring**: System health endpoints and status monitoring
+- **Debug Endpoints**: Database inspection and system debugging tools
 
 ## Project Structure
 
 ```text
-qa-real-time-events/
+ai_audio_notification/
 ├── backend/
-│   ├── server.js                  # Express server, routes, SSE registration, static serving
-│   ├── config.js                  # Configuration management
-│   ├── ecosystem.config.js        # PM2 configuration
+│   ├── server.js                  # Express server with WebRTC, SSE, and static serving
+│   ├── config.js                  # Kafka configuration management
+│   ├── ecosystem.config.js        # PM2 configuration for production
 │   ├── init_sqlite.sh            # Database initialization script
 │   ├── routes/
 │   │   ├── events.routes.js       # /api/events routes
@@ -38,15 +64,21 @@ qa-real-time-events/
 │   │   ├── event.controller.js    # Event controller (validation + responses)
 │   │   └── webhook.controller.js  # Webhook controller for external integrations
 │   ├── services/
-│   │   ├── app.service.js         # Kafka → DB → SSE bridge
+│   │   ├── app.service.js         # Kafka → DB → SSE bridge service
 │   │   └── event.service.js       # Prisma-backed event operations
 │   ├── lib/
 │   │   ├── sse/                   # SSE helpers (register route, broadcast)
-│   │   ├── prisma/                # Prisma client wrapper
-│   │   ├── kafka/                 # Kafka client/producer/consumer
-│   │   └── webhook/               # Webhook utilities (future expansion)
+│   │   ├── prisma/                # Prisma client wrapper and service
+│   │   ├── kafka/                 # Kafka client, producer, and consumer services
+│   │   └── webrtc/                # WebRTC streaming components
+│   │       ├── streaming-service.js    # Main WebRTC streaming service
+│   │       ├── signaling-server.js     # WebRTC signaling server
+│   │       ├── peer-manager.js         # WebRTC peer connection management
+│   │       └── rtsp-processor.js      # RTSP to WebRTC conversion
 │   ├── prisma/
 │   │   └── schema.prisma          # Prisma schema for SQLite
+│   ├── public/                    # Backend public files (HLS streams)
+│   │   └── stream/               # HLS streaming files
 │   ├── postman/
 │   │   └── quality_approved.postman_collection.json # API testing collection
 │   ├── package.json
@@ -55,12 +87,13 @@ qa-real-time-events/
 │   └── .env                       # Environment configuration
 ├── frontend/
 │   └── public/
-│       ├── index.html             # Main UI
-│       ├── styles.css             # Styles
-│       ├── app.js                 # SSE client + UI logic
-│       ├── audio-generator.js     # Web Audio API fallback for notifications
-│       ├── notification.wav       # Audio notification file
-│       └── placeholder.svg        # Placeholder image
+│       ├── index.html             # Main UI with video streaming and audio controls
+│       ├── styles.css             # Modern responsive styles
+│       ├── app.js                 # SSE client + advanced audio management
+│       ├── webrtc-client.js       # WebRTC video streaming client
+│       ├── env.js                 # Runtime configuration (generated)
+│       ├── placeholder.svg        # Placeholder image
+│       └── stream/                # HLS streaming files (fallback)
 └── README.md
 ```
 
@@ -92,17 +125,24 @@ MAX_COMPACT_EVENTS=100
 SSE_RECONNECT_MS=3000
 DEFAULT_VOLUME=0.5
 
+# WebRTC Streaming Configuration
+WEBRTC_ENABLED=true
+RTSP_URL="rtsp://your-rtsp-server:554/stream"
+RTSP_FRAME_RATE=30
+RTSP_WIDTH=1280
+RTSP_HEIGHT=720
+RTSP_BITRATE=2000k
+STREAM_URL="/stream/stream.m3u8"
+
+# Kafka Configuration (optional)
+KAFKA_BROKER="localhost:9092"
+KAFKA_BROKERS="localhost:9092,localhost:9093"
+
 # Webhook Configuration
 WEBHOOK_URL="https://webhook.site/REPLACE-WITH-YOUR-UNIQUE-ID"
 WEBHOOK_TIMEOUT=10000
 WEBHOOK_RETRY_ATTEMPTS=3
 WEBHOOK_RETRY_DELAY=1000
-
-# Additional Configuration (optional)
-# MAX_EVENTS=1000
-# MAX_COMPACT_EVENTS=100
-# SSE_RECONNECT_MS=3000
-# DEFAULT_VOLUME=0.5
 ```
 
 ### 3) Start the Server
@@ -125,8 +165,11 @@ Navigate to `http://localhost:4021` (or the port specified in your `.env` file).
 - Health endpoint: `GET /health`
 - REST routes mounted at `GET/POST/PUT/DELETE /api/events`
 - SSE route registered by `registerSseRoute(app)` at `/events`
+- WebRTC streaming service with RTSP processing
+- Kafka integration for message processing
 - Serves static frontend from `frontend/public`
 - Frontend runtime config at `GET /env.js` generated from `.env`
+- HLS streaming support with `/public` static serving
 
 ### Events API (`/api/events`)
 
@@ -149,15 +192,32 @@ Navigate to `http://localhost:4021` (or the port specified in your `.env` file).
 ### Services and Libraries
 
 - `services/event.service.js` — Event CRUD via Prisma with search and pagination
-- `lib/prisma` — Prisma client initialization/wrapper
+- `services/app.service.js` — Kafka to database to SSE bridge service
+- `lib/prisma` — Prisma client initialization/wrapper and service
 - `lib/sse` — SSE client management and broadcast helpers
+- `lib/kafka` — Kafka client, producer, and consumer services
+- `lib/webrtc/streaming-service.js` — Main WebRTC streaming service
+- `lib/webrtc/signaling-server.js` — WebRTC signaling server
+- `lib/webrtc/peer-manager.js` — WebRTC peer connection management
+- `lib/webrtc/rtsp-processor.js` — RTSP to WebRTC conversion
 
 ## Frontend (frontend/public/)
 
-- `index.html` — Main page with responsive design and modal dialogs
-- `styles.css` — Modern CSS with responsive layout and animations
-- `app.js` — SSE client with pagination, search, audio controls, and event management
-- `audio-generator.js` — Web Audio API fallback for notifications
+### Core Files
+- `index.html` — Main page with video streaming, audio controls, and responsive design
+- `styles.css` — Modern CSS with responsive layout, animations, and video streaming styles
+- `app.js` — SSE client with advanced audio management, pagination, and event controls
+- `webrtc-client.js` — WebRTC video streaming client with HLS fallback
+- `env.js` — Runtime configuration (generated by backend)
+
+### Key Features
+- **Live Video Streaming**: WebRTC video player with start/stop controls
+- **Advanced Audio Management**: Multiple play modes (infinite, custom duration)
+- **Recent Events Panel**: Quick access to most recent events
+- **Audio Control Panel**: Comprehensive audio settings and controls
+- **Event History Table**: Paginated event display with search and filtering
+- **Modal Dialogs**: Image preview and configuration dialogs
+- **Responsive Design**: Mobile-friendly interface with real-time updates
 
 ### Event Data Structure (example)
 
@@ -285,11 +345,14 @@ Example webhook payload:
 
 ## Endpoints
 
-- `GET /` — Frontend application
+### Core Application
+- `GET /` — Frontend application with video streaming and audio controls
 - `GET /events` — SSE stream for real-time events
 - `GET /env.js` — Frontend runtime configuration
 - `GET /health` — Health check endpoint
 - `GET /debug/db` — Database debug information
+
+### Event Management API
 - `GET /api/events` — List events with search and filtering
 - `GET /api/events/page` — Paginated event listing
 - `GET /api/events/:id` — Get event by ID
@@ -300,9 +363,42 @@ Example webhook payload:
 - `DELETE /api/events` — Delete all events
 - `POST /api/webhook` — Webhook endpoint for external integrations
 
+### WebRTC Streaming API
+- `GET /api/streaming/status` — Get streaming service status
+- `GET /api/streaming/test-rtsp` — Test RTSP connection
+- `GET /public/stream/stream.m3u8` — HLS stream endpoint (fallback)
+
+### Static Files
+- `GET /public/*` — Backend public files (HLS streams)
+- `GET /stream/*` — Frontend stream files (HLS fallback)
+
+## WebRTC Streaming Features
+
+### Features
+- **Real-time Video Streaming**: WebRTC-based video streaming with low latency
+- **RTSP Integration**: Process RTSP streams and convert to WebRTC for browser compatibility
+- **HLS Fallback**: HTTP Live Streaming support for broader device compatibility
+- **Streaming Controls**: Start/stop streaming with real-time status indicators
+- **Connection Management**: Automatic reconnection and error handling
+
+### Configuration
+- Set `WEBRTC_ENABLED=true` in your `.env` file
+- Configure `RTSP_URL` to point to your RTSP stream source
+- Adjust streaming parameters (frame rate, resolution, bitrate) as needed
+- The system will automatically start the streaming service on server startup
+
+### Usage
+1. Navigate to the application in your browser
+2. The video streaming section will appear if WebRTC is enabled
+3. Click "Start Stream" to begin video streaming
+4. Use "Stop Stream" to halt the video feed
+5. Monitor connection status through the status indicators
+
 ## Browser Compatibility
 
-- SSE, Web Audio API, and modern CSS are supported in all modern browsers (Chrome, Firefox, Safari, Edge).
+- SSE, Web Audio API, WebRTC, and modern CSS are supported in all modern browsers (Chrome, Firefox, Safari, Edge).
+- WebRTC requires HTTPS in production environments.
+- HLS fallback ensures compatibility with older browsers and devices.
 
 ## Development
 
@@ -342,8 +438,28 @@ A Postman collection is included in `backend/postman/quality_approved.postman_co
 3. Check browser console for SSE errors
 4. Try refreshing the page and reconnecting
 5. Check `/health` endpoint to see active connections
-6. Verify `FRONTEND_SSE_URL` matches server endpoint
+6. Verify `SSE_URL` matches server endpoint
 7. Verify server status at `http://localhost:4021/health` (or `curl -s http://localhost:4021/health`)
+
+### WebRTC Streaming Issues
+
+1. **Video Not Loading**:
+   - Check that `WEBRTC_ENABLED=true` in your `.env` file
+   - Verify `RTSP_URL` is correct and accessible
+   - Check browser console for WebRTC errors
+   - Ensure RTSP stream is active and accessible
+
+2. **Streaming Connection Problems**:
+   - Test RTSP connection using `/api/streaming/test-rtsp` endpoint
+   - Check streaming status via `/api/streaming/status` endpoint
+   - Verify firewall settings for RTSP port (usually 554)
+   - Check server logs for streaming service errors
+
+3. **Browser Compatibility**:
+   - WebRTC requires HTTPS in production
+   - Some browsers may require user interaction before allowing video
+   - Try different browsers if WebRTC fails
+   - HLS fallback should work in most browsers
 
 ### Database Issues
 
