@@ -17,7 +17,6 @@ package-lock.json
 *.sqlite
 *.sqlite3
 dev.db
-prod.db
 
 # Logs
 logs
@@ -126,33 +125,22 @@ temp/
 ehthumbs.db
 Thumbs.db
 
-# PM2 logs
-.pm2/
+# Streaming files (temporary)
+frontend/public/stream/
+frontend/public/stream/*.ts
+frontend/public/stream/*.m3u8
 
-# Prisma
-prisma/migrations/
+# PM2 ecosystem files
+ecosystem.config.js
 
 # Build outputs
 build/
 dist/
+out/
 
-# Test coverage
+# Test files
+test-results/
 coverage/
 
-# Local development
-.local/
-
-# Audio files (if you want to exclude them from git)
-# *.wav
-# *.mp3
-# *.ogg
-
-# Keep important audio files but ignore large ones
-# Uncomment the following lines if you want to exclude audio files
-# frontend/public/*.wav
-# frontend/public/*.mp3
-# frontend/public/*.ogg
-
-# Keep placeholder and small assets
-!frontend/public/placeholder.svg
-!frontend/public/notification.wav
+# Prisma
+prisma/migrations/
